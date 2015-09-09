@@ -9,7 +9,7 @@ package game
 // Special Cards: knight, victory point, road building, monopoly, 2 resources
 // Special achievements: largest army, longest road
 
-// TODO store rand seed here in Game? and use fixed rand function
+// TODO store rand seed here in Game? and use fixed rand function?
 type Game struct {
 	// Tiles have an implicit position, the order is from top to bottom, left
 	// to right, look at this ASCII art:
@@ -45,7 +45,7 @@ type Terrain int
 const (
 	Hills Terrain = iota
 	Pasture
-	Moutains
+	Mountains
 	Field
 	Forest
 	Desert
@@ -159,7 +159,6 @@ func New(colors []Color, randomNumberGenerator func() int) Game {
 		{Terrain: Water, Harbor: ThreeToOneHarbor},
 	}
 	shuffle(*harbors)
-
 	game.Tiles[0] = rand(harbors)
 	game.Tiles[2] = rand(harbors)
 	game.Tiles[8] = rand(harbors)
@@ -186,9 +185,9 @@ func New(colors []Color, randomNumberGenerator func() int) Game {
 		{Terrain: Hills},
 		{Terrain: Hills},
 		{Terrain: Hills},
-		{Terrain: Moutains},
-		{Terrain: Moutains},
-		{Terrain: Moutains},
+		{Terrain: Mountains},
+		{Terrain: Mountains},
+		{Terrain: Mountains},
 		{Terrain: Pasture},
 		{Terrain: Pasture},
 		{Terrain: Pasture},
@@ -222,6 +221,11 @@ func New(colors []Color, randomNumberGenerator func() int) Game {
 	game.Tiles[29] = rand(terrains)
 	game.Tiles[30] = rand(terrains)
 	game.Tiles[31] = rand(terrains)
+	for i, tile := range game.Tiles {
+		if tile.Terrain == Desert {
+			game.Robber.Position = i
+		}
+	}
 
 	numbers := []int{5, 2, 6, 3, 8, 10, 9, 12, 11, 4, 8, 10, 9, 4, 5, 6, 3, 11}
 	tileOrder := []int{16, 23, 29, 30, 31, 26, 20, 13, 7, 6, 5, 10, 17, 24, 25, 19, 12, 11, 18}
@@ -290,6 +294,35 @@ func (g *Game) DealResources(dice int) {
 			}
 		}
 	}
+}
+
+func (g *Game) GetTiles() []PositionTile {
+	// TODO buffer these
+	tiles := make([]PositionTile, len(tilePositions))
+	for i := range tilePositions /*TODO g.Tiles*/ {
+		tiles[i].Tile = g.Tiles[i]
+		tiles[i].Position = tilePositions[i]
+		tiles[i].HasRobber = g.Robber.Position == i
+	}
+	return tiles
+}
+
+type PositionTile struct {
+	Tile
+	Position  TilePosition
+	HasRobber bool
+}
+
+type TilePosition struct{ X, Y int }
+
+var tilePositions = []TilePosition{
+	{3, 0}, {5, 0}, {7, 0}, {9, 0},
+	{2, 1}, {4, 1}, {6, 1}, {8, 1}, {10, 1},
+	{1, 2}, {3, 2}, {5, 2}, {7, 2}, {9, 2}, {11, 2},
+	{0, 3}, {2, 3}, {4, 3}, {6, 3}, {8, 3}, {10, 3}, {12, 3},
+	{1, 4}, {3, 4}, {5, 4}, {7, 4}, {9, 4}, {11, 4},
+	{2, 5}, {4, 5}, {6, 5}, {8, 5}, {10, 5},
+	{3, 6}, {5, 6}, {7, 6}, {9, 6},
 }
 
 type building interface {
@@ -364,7 +397,7 @@ func (t Tile) Resource() Resource {
 		return Brick
 	case Pasture:
 		return Wool
-	case Moutains:
+	case Mountains:
 		return Ore
 	case Field:
 		return Grain
