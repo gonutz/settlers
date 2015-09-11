@@ -11,20 +11,10 @@ package game
 
 // TODO store rand seed here in Game? and use fixed rand function?
 type Game struct {
-	// Tiles have an implicit position, the order is from top to bottom, left
-	// to right, look at this ASCII art:
-	//     ____  ____
-	//    /    \/    \
-	//    |  0 ||  1 |
-	//  __\____/\____/__
-	// /    \/    \/    \
-	// |  2 ||  3 ||  4 |
-	// \____/\____/\____/
-	//
 	Tiles            [37]Tile
 	Players          [4]Player
 	PlayerCount      int
-	NextPlayer       int
+	CurrentPlayer    int
 	Robber           Robber
 	DevelopmentCards [25]DevelopmentCard
 	CardsDealt       int
@@ -35,10 +25,32 @@ type Game struct {
 }
 
 type Tile struct {
-	Terrain Terrain
-	Number  int
-	Harbor  Harbor
+	Position TilePosition
+	Terrain  Terrain
+	Number   int
+	Harbor   Harbor
 }
+
+// TilePosition's coordinates will always add up to an odd number. The top-most
+// horizontal row has y=0 and the left-most, only half visible, tile has x=-1 so
+// the first full visible tile in that row is x=1.
+// The second row has y=1 and starts with x=0.
+// This means that x increases in steps of two when going to the next tile to
+// the right.
+//     ____  ____
+//    /    \/    \
+//    | 10 || 30 |
+//  __\____/\____/__
+// /    \/    \/    \
+// | 01 || 21 || 41 |
+// \____/\____/\____/
+//    /    \/    \
+//    | 12 || 32 |
+//    \____/\____/
+//
+type TilePosition Point
+
+type Point struct{ X, Y int }
 
 type Terrain int
 
@@ -52,6 +64,7 @@ const (
 	Water
 )
 
+// TODO give harbor an edge or two corners for making clear where it is
 type Harbor int
 
 const (
@@ -81,19 +94,35 @@ const (
 	Orange
 )
 
-type Settlement struct{ Position CornerPosition }
+type Settlement struct{ Position TileCorner }
 
-// CornerPosition is identified by the 3 adjecent tiles, these are the indices
-// of those tiles into the Tiles array of Game.
-type CornerPosition [3]int
+// TileCorners are numbered in zgizag lines, the top-most line has y=0 and x
+// is sequentiel, starting at 0 on the left-most tile (the one that is only half
+// way visible horizonally).
+//
+// 00  20  40
+//  \  /\  /\
+//   \/  \/  \/
+//   10  30  50
+//   ||  ||  ||
+//   ||  ||  ||
+//   11  31  51
+//   /\  /\  /\
+//  /  \/  \/
+// 01  21  41
+//
+type TileCorner Point
 
-type City struct{ Position CornerPosition }
+func (c TileCorner) IsValid() bool { return c.X != 0 || c.Y != 0 }
 
-type Road struct{ Position EdgePosition }
+// TODO comment this one and show the drawing
+type TileEdge Point
 
-// EdgePosition is identified by the 2 adjecent tiles, these are the indices
-// of those tiles into the Tiles array of Game.
-type EdgePosition [2]int
+func (e TileEdge) IsValid() bool { return e.X != 0 || e.Y != 0 }
+
+type City struct{ Position TileCorner }
+
+type Road struct{ Position TileEdge }
 
 type Resource int
 
@@ -128,9 +157,7 @@ const (
 	TakeTwoResources
 )
 
-// TODO these are some thoughts
-
-func New(colors []Color, randomNumberGenerator func() int) Game {
+func New(colors []Color, randomNumberGenerator func() int) *Game {
 	var game Game
 
 	rand := func(tiles *[]Tile) Tile {
@@ -221,10 +248,15 @@ func New(colors []Color, randomNumberGenerator func() int) Game {
 	game.Tiles[29] = rand(terrains)
 	game.Tiles[30] = rand(terrains)
 	game.Tiles[31] = rand(terrains)
+	// find the desert and place the robber on it
 	for i, tile := range game.Tiles {
 		if tile.Terrain == Desert {
 			game.Robber.Position = i
 		}
+	}
+	// set tile positions
+	for i, tile := range game.Tiles {
+		tile.Position = tilePositions[i]
 	}
 
 	numbers := []int{5, 2, 6, 3, 8, 10, 9, 12, 11, 4, 8, 10, 9, 4, 5, 6, 3, 11}
@@ -263,35 +295,127 @@ func New(colors []Color, randomNumberGenerator func() int) Game {
 	game.LongestRoad = -1
 	game.LargestArmy = -1
 
-	return game
+	return &game
 }
 
 // TODO create a way to get to the information who received what resources
 // this is necessary to animate the cards flying to the players
 func (g *Game) DealResources(dice int) {
-
-	for p := 0; p < g.PlayerCount; p++ {
-		player := &g.Players[p]
-
-		var buildings []building
-		for _, settlement := range player.Settlements {
-			buildings = append(buildings, settlement)
-		}
-		for _, city := range player.Cities {
-			buildings = append(buildings, city)
-		}
-
-		for _, b := range buildings {
-			if b.isSet() {
-				for _, bordering := range b.borderingTiles() {
-					tile := g.Tiles[bordering]
-					if g.Robber.Position != bordering && tile.Number == dice {
-						// the tile's resource cannot be Nothing because it as a
-						// number that was rolled by the dice (!= 0)
-						player.Resources[tile.Resource()] += b.resourceCount()
+	for _, tile := range g.Tiles {
+		if tile.Number == dice {
+			corners := AdjacentCornersToTile(tile.Position)
+			for _, corner := range corners {
+				for playerIndex, p := range g.GetPlayers() {
+					for _, s := range p.GetBuiltSettlements() {
+						if s.Position == corner {
+							g.Players[playerIndex].Resources[tile.Resource()]++
+						}
+					}
+					for _, c := range p.GetBuiltCities() {
+						if c.Position == corner {
+							g.Players[playerIndex].Resources[tile.Resource()] += 2
+						}
 					}
 				}
 			}
+		}
+	}
+	// TODO re-create this functionality
+	/*
+		for p := 0; p < g.PlayerCount; p++ {
+			player := &g.Players[p]
+
+			var buildings []building
+			for _, settlement := range player.Settlements {
+				buildings = append(buildings, settlement)
+			}
+			for _, city := range player.Cities {
+				buildings = append(buildings, city)
+			}
+
+			for _, b := range buildings {
+				if b.isSet() {
+					for _, bordering := range b.borderingTiles() {
+						tile := g.Tiles[bordering]
+						if g.Robber.Position != bordering && tile.Number == dice {
+							// the tile's resource cannot be Nothing because it as a
+							// number that was rolled by the dice (!= 0)
+							player.Resources[tile.Resource()] += b.resourceCount()
+						}
+					}
+				}
+			}
+		}
+	*/
+}
+
+func (g *Game) GetPlayers() []Player {
+	return g.Players[:g.PlayerCount]
+}
+
+func (p Player) GetBuiltSettlements() []Settlement {
+	last := 0
+	for last < len(p.Settlements) && p.Settlements[last].isSet() {
+		last++
+	}
+	return p.Settlements[:last]
+}
+
+func (p Player) GetBuiltCities() []City {
+	last := 0
+	for last < len(p.Cities) && p.Cities[last].isSet() {
+		last++
+	}
+	return p.Cities[:last]
+}
+
+func (p Player) GetBuiltRoads() []Road {
+	last := 0
+	for last < len(p.Roads) && p.Roads[last].isSet() {
+		last++
+	}
+	return p.Roads[:last]
+}
+
+func (g *Game) CanPlayerBuildSettlement() bool {
+	// the player can build as long as the last settlement has not been placed
+	return !g.Players[g.CurrentPlayer].Settlements[4].isSet()
+}
+
+func (g *Game) CanPlayerBuildCity() bool {
+	return !g.Players[g.CurrentPlayer].Cities[3].isSet()
+}
+
+func (g *Game) CanPlayerBuildRoad() bool {
+	return !g.Players[g.CurrentPlayer].Roads[14].isSet()
+}
+
+func (g *Game) BuildSettlement(p Point) {
+	player := &g.Players[g.CurrentPlayer]
+	for i := range player.Settlements {
+		if !player.Settlements[i].isSet() {
+			player.Settlements[i].Position = TileCorner(p)
+			return
+		}
+	}
+}
+
+func (g *Game) BuildCity(p Point) {
+	player := &g.Players[g.CurrentPlayer]
+	for i := range player.Cities {
+		if !player.Cities[i].isSet() {
+			player.Cities[i].Position = TileCorner(p)
+			return
+		}
+	}
+}
+
+func (g *Game) BuildRoad(p Point) {
+	player := &g.Players[g.CurrentPlayer]
+	for i := range player.Roads {
+		if !player.Roads[i].isSet() {
+			player.Roads[i].Position = TileEdge(p)
+			return
 		}
 	}
 }
@@ -307,13 +431,15 @@ func (g *Game) GetTiles() []PositionTile {
 	return tiles
 }
 
+func (g *Game) GetTilePosition(tile int) (x, y int) {
+	return tilePositions[tile].X, tilePositions[tile].Y
+}
+
 type PositionTile struct {
 	Tile
 	Position  TilePosition
 	HasRobber bool
 }
-
-type TilePosition struct{ X, Y int }
 
 var tilePositions = []TilePosition{
 	{3, 0}, {5, 0}, {7, 0}, {9, 0},
@@ -325,6 +451,8 @@ var tilePositions = []TilePosition{
 	{3, 6}, {5, 6}, {7, 6}, {9, 6},
 }
 
+func (g *Game) Size() (w, h int) { return 13, 7 }
+
 type building interface {
 	isSet() bool
 	resourceCount() int
@@ -332,50 +460,12 @@ type building interface {
 }
 
 func (g *Game) NextTurn() {
-	g.NextPlayer = (g.NextPlayer + 1) % g.PlayerCount
-}
-
-func (p *CornerPosition) Sort() {
-	if (*p)[2] < (*p)[0] {
-		(*p)[0], (*p)[2] = (*p)[2], (*p)[0]
-	}
-	if (*p)[1] < (*p)[0] {
-		(*p)[0], (*p)[1] = (*p)[1], (*p)[0]
-	}
-	if (*p)[2] < (*p)[1] {
-		(*p)[1], (*p)[2] = (*p)[2], (*p)[1]
-	}
-}
-
-func (p *CornerPosition) IsValid() bool {
-	return !p.invalid()
-}
-
-func (p *CornerPosition) invalid() bool {
-	return (*p)[0] == 0 && (*p)[1] == 0
-}
-
-func (p *EdgePosition) Sort() {
-	if (*p)[1] < (*p)[0] {
-		(*p)[0], (*p)[1] = (*p)[1], (*p)[0]
-	}
-}
-
-func (p *EdgePosition) IsValid() bool {
-	return !p.invalid()
-}
-
-func (p *EdgePosition) invalid() bool {
-	return (*p)[0] == 0 && (*p)[1] == 0
+	g.CurrentPlayer = (g.CurrentPlayer + 1) % g.PlayerCount
 }
 
 // IsSet returns true if the settlement is currently placed on the game field.
 func (s Settlement) isSet() bool {
 	return s.Position.IsValid()
-}
-
-func (s Settlement) borderingTiles() []int {
-	return s.Position[:]
 }
 
 func (Settlement) resourceCount() int { return 1 }
@@ -385,8 +475,8 @@ func (c City) isSet() bool {
 	return c.Position.IsValid()
 }
 
-func (c City) borderingTiles() []int {
-	return c.Position[:]
+func (r Road) isSet() bool {
+	return r.Position.IsValid()
 }
 
 func (City) resourceCount() int { return 2 }
@@ -405,5 +495,67 @@ func (t Tile) Resource() Resource {
 		return Lumber
 	default:
 		return Nothing
+	}
+}
+
+func AdjacentTileToCorner(c TileCorner) [3]TilePosition {
+	if (c.X+c.Y)%2 == 0 {
+		// two on top, one below
+		return [3]TilePosition{
+			{c.X - 2, c.Y - 1},
+			{c.X - 1, c.Y},
+			{c.X - 0, c.Y - 1},
+		}
+	}
+	// one on top, two below
+	return [3]TilePosition{
+		{c.X - 2, c.Y},
+		{c.X - 1, c.Y - 1},
+		{c.X - 0, c.Y},
+	}
+}
+
+func AdjacentCornersToTile(p TilePosition) [6]TileCorner {
+	return [6]TileCorner{
+		{p.X + 0, p.Y},
+		{p.X + 0, p.Y + 1},
+		{p.X + 1, p.Y},
+		{p.X + 1, p.Y + 1},
+		{p.X + 2, p.Y},
+		{p.X + 2, p.Y + 1},
+	}
+}
+
+func AdjacentTilesToEdge(p TileEdge) [2]TilePosition {
+	if p.X%2 == 0 {
+		// vertical edge
+		return [2]TilePosition{
+			{p.X/2 - 2, p.Y},
+			{p.X / 2, p.Y},
+		}
+	}
+	// now it's either rising or falling edge
+	if (p.Y%2 == 0 && (p.X-1)%4 == 0) || (p.Y%2 == 1 && (p.X-3)%4 == 0) {
+		// falling edge
+		return [2]TilePosition{
+			{p.X / 4 * 2, p.Y},
+			{p.X/4*2 + 1, p.Y - 1},
+		}
+	}
+	// rising edge
+	return [2]TilePosition{
+		{p.X/4*2 - 1, p.Y - 1},
+		{p.X / 4 * 2, p.Y},
+	}
+}
+
+func AdjacentEdgesToTile(p TilePosition) [6]TileEdge {
+	return [6]TileEdge{
+		{p.X * 2, p.Y},       // left
+		{p.X*2 + 1, p.Y},     // top-left
+		{p.X*2 + 3, p.Y},     // top-right
+		{p.X*2 + 4, p.Y},     // right
+		{p.X*2 + 3, p.Y + 1}, // bottom-right
+		{p.X*2 + 1, p.Y + 1}, // bottom-left
 	}
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"github.com/gonutz/prototype/draw"
 	"github.com/gonutz/settlers/game"
 	"math/rand"
@@ -8,42 +9,122 @@ import (
 )
 
 func main() {
-	game := game.New([]game.Color{game.Red, game.Blue, game.White}, rand.Int)
+	g := game.New([]game.Color{game.Red, game.Blue, game.White}, rand.Int)
+	g.Players[0].Settlements[0].Position = game.TileCorner{3, 1}
+	g.Players[0].Settlements[1].Position = game.TileCorner{4, 1}
+	g.Players[0].Settlements[2].Position = game.TileCorner{5, 1}
+	g.Players[1].Cities[0].Position = game.TileCorner{5, 2}
+	g.Players[1].Cities[1].Position = game.TileCorner{6, 2}
+	g.Players[1].Cities[2].Position = game.TileCorner{7, 2}
+	g.Players[1].Roads[0].Position = game.TileEdge{8, 1}
+	g.Players[2].Roads[0].Position = game.TileEdge{9, 1}
+	g.Players[0].Roads[0].Position = game.TileEdge{11, 1}
+	g.Players[0].Roads[1].Position = game.TileEdge{12, 1}
+	g.Players[2].Roads[1].Position = game.TileEdge{11, 2}
+	state := buildingSettlement
 
-	draw.RunWindow("Settlers", 1400, 1100, draw.Resizable, func(window draw.Window) {
+	draw.RunWindow("Settlers", 1400, 1000, draw.Resizable, func(window draw.Window) {
 		if window.WasKeyPressed("escape") {
 			window.Close()
+		}
+
+		if window.WasKeyPressed("c") {
+			selectionMode = cornerSelection
+			// toggle between building settlements and buildings
+			if state == buildingSettlement {
+				state = buildingCity
+			} else {
+				state = buildingSettlement
+			}
+		}
+		if window.WasKeyPressed("e") {
+			selectionMode = edgeSelection
+			state = buildingRoad
+		}
+		if window.WasKeyPressed("t") {
+			selectionMode = tileSelection
+		}
+
+		if state == buildingSettlement || state == buildingCity || state == buildingRoad {
+			canBuild := g.CanPlayerBuildSettlement
+			build := g.BuildSettlement
+			screenToTile := screenToCorner
+			if state == buildingCity {
+				canBuild = g.CanPlayerBuildCity
+				build = g.BuildCity
+			}
+			if state == buildingRoad {
+				canBuild = g.CanPlayerBuildRoad
+				build = g.BuildRoad
+				screenToTile = screenToEdge
+			}
+			if canBuild() {
+				for _, click := range window.Clicks() {
+					if click.Button == draw.LeftButton {
+						corner, ok := screenToTile(click.X, click.Y, 40)
+						if ok {
+							build(corner)
+						} else {
+							fmt.Println("miss")
+						}
+					}
+				}
+			}
 		}
 
 		for i := 2; i <= 12; i++ {
 			// TODO what about 7?
 			if window.WasKeyPressed(strconv.Itoa(i)) {
-				game.DealResources(i)
+				g.DealResources(i)
 			}
 		}
 
-		drawGame(game, window)
+		drawGame(g, window)
+		if selectionMode == cornerSelection {
+			highlightCorner(g, window)
+		}
+		if selectionMode == edgeSelection {
+			highlightEdge(g, window)
+		}
 	})
 }
 
+// TODO keep the current state in game.Game?
+type gameState int
+
 const (
-	tileW       = 200
-	tileH       = 212
-	tileYOffset = 162
+	buildingSettlement gameState = iota
+	buildingCity
+	buildingRoad
 )
 
-func drawGame(g game.Game, window draw.Window) {
+var selectionMode int = edgeSelection
+
+const (
+	tileSelection int = iota
+	cornerSelection
+	edgeSelection
+)
+
+const (
+	tileW            = 200
+	tileH            = 212
+	tileSlopeHeight  = 50
+	tileYOffset      = tileH - tileSlopeHeight
+	tileMiddleHeight = tileH - 2*(tileH-tileYOffset)
+)
+
+func drawGame(g *game.Game, window draw.Window) {
+	// draw tiles and numbers
 	w, h := window.Size()
-	xOffset, yOffset := 0, 0
 	window.FillRect(0, 0, w, h, draw.DarkBlue)
 	mouseX, mouseY := window.MousePosition()
-	mouseX -= xOffset
-	mouseY -= yOffset
 	for _, tile := range g.GetTiles() {
-		x := xOffset + tile.Position.X*tileW/2
-		y := yOffset + tile.Position.Y*tileYOffset
+		x := tile.Position.X * tileW / 2
+		y := tile.Position.Y * tileYOffset
 		visible := window.IsMouseDown(draw.LeftButton) ||
-			!hexContains(x, y, mouseX, mouseY)
+			!hexContains(x, y, mouseX, mouseY) ||
+			selectionMode != tileSelection
 		if visible {
 			var file string
 			switch tile.Terrain {
@@ -71,7 +152,7 @@ func drawGame(g game.Game, window draw.Window) {
 			x, y := x+(tileW-w)/2, y+(tileH-h)/2
 			plateSize := max(w, h) + 10
 			window.FillEllipse(x+w/2-plateSize/2, y+h/2-plateSize/2,
-				plateSize, plateSize, draw.White)
+				plateSize, plateSize, draw.RGBA(1, 1, 1, 0.5))
 			numberColor := draw.Black
 			if tile.Number == 6 || tile.Number == 8 {
 				numberColor = draw.Red
@@ -81,6 +162,55 @@ func drawGame(g game.Game, window draw.Window) {
 				window.FillEllipse(x+w/2-plateSize/2, y+h/2-plateSize/2,
 					plateSize, plateSize, draw.DarkGray)
 			}
+		}
+	}
+
+	// draw buildings
+	for _, player := range g.GetPlayers() {
+		for _, s := range player.GetBuiltSettlements() {
+			var file string
+			switch player.Color {
+			case game.Red:
+				file = "./settlement_red.png"
+			case game.Blue:
+				file = "./settlement_blue.png"
+			case game.White:
+				file = "./settlement_white.png"
+			case game.Orange:
+				file = "./settlement_orange.png"
+			}
+			x, y := cornerToScreen(s.Position, g)
+			window.DrawImageFile(file, x-30/2, y-42/2)
+		}
+		for _, s := range player.GetBuiltCities() {
+			var file string
+			switch player.Color {
+			case game.Red:
+				file = "./city_red.png"
+			case game.Blue:
+				file = "./city_blue.png"
+			case game.White:
+				file = "./city_white.png"
+			case game.Orange:
+				file = "./city_orange.png"
+			}
+			x, y := cornerToScreen(s.Position, g)
+			window.DrawImageFile(file, x-65/2, y-42/2)
+		}
+		for _, s := range player.GetBuiltRoads() {
+			var color draw.Color
+			switch player.Color {
+			case game.Red:
+				color = draw.Red
+			case game.Blue:
+				color = draw.Blue
+			case game.White:
+				color = draw.White
+			case game.Orange:
+				color = draw.LightBrown // TOEO have orange
+			}
+			x, y := edgeToScreen(s.Position, g)
+			window.FillRect(x-20, y-20, 40, 40, color)
 		}
 	}
 }
@@ -99,7 +229,39 @@ func max(a, b int) int {
 	return b
 }
 
+func hexagonAtTile(tileX, tileY int) polygon {
+	x, y := tileToScreen(tileX, tileY)
+	return hexagonAt(x, y)
+}
+
+func tileToScreen(tileX, tileY int) (x, y int) {
+	x = tileX * tileW / 2
+	y = tileY * tileYOffset
+	return
+}
+
+func hexagonAt(x, y int) polygon {
+	return polygon{
+		{x + tileW/2, y},
+		{x + tileW - 1, y + tileSlopeHeight},
+		{x + tileW - 1, y + tileH - tileSlopeHeight},
+		{x + tileW/2, y + tileH - 1},
+		{x, y + tileH - tileSlopeHeight},
+		{x, y + tileSlopeHeight},
+	}
+}
+
+func (p polygon) draw(window draw.Window, color draw.Color) {
+	for i := range p {
+		j := (i + 1) % len(p)
+		window.DrawLine(p[i].x, p[i].y, p[j].x, p[j].y, color)
+	}
+}
+
 func hexContains(x, y, px, py int) bool {
+	// TODO use polygon containment here?
+	return isPointInPolygon(point{px, py}, hexagonAt(x, y))
+
 	w, h := tileW, tileH
 	yOffset := h - tileYOffset
 	if px < x || px >= x+w || py < y || py >= y+h {
@@ -126,4 +288,143 @@ func hexContains(x, y, px, py int) bool {
 		}
 	}
 	return true
+}
+
+func highlightCorner(game *game.Game, window draw.Window) {
+	mx, my := window.MousePosition()
+	w, h := window.Size()
+	var position point
+	const radius = 40
+	const squareRadius = radius * radius
+
+	yOffset := 0
+	for y := 0; y < h; y += tileH - tileSlopeHeight {
+		for x := 0; x < w; x += tileW / 2 {
+			if squareDist(x, y+yOffset, mx, my) < squareRadius {
+				position = point{x, y + yOffset}
+			}
+			yOffset = tileSlopeHeight - yOffset
+		}
+		yOffset = tileSlopeHeight - yOffset
+	}
+
+	if position.x != 0 || position.y != 0 {
+		window.FillEllipse(
+			position.x-radius, position.y-radius,
+			2*radius, 2*radius,
+			draw.RGBA(1, 0, 0.5, 0.75))
+	}
+}
+
+func squareDist(x1, y1, x2, y2 int) int {
+	dx, dy := x1-x2, y1-y2
+	return dx*dx + dy*dy
+}
+
+func boundingRect(p game.TilePosition) rect {
+	x := p.X * tileW / 2
+	y := p.Y * tileYOffset
+	return rect{x, y, tileW, tileH}
+}
+
+type rect struct{ x, y, w, h int }
+
+func (r rect) contains(x, y int) bool {
+	return x >= r.x && x < r.x+r.w && y >= r.y && y < r.y+r.h
+}
+
+func isPointInPolygon(p point, v polygon) bool {
+	contained := false
+	for i, j := 0, len(v)-1; i < len(v); i, j = i+1, i {
+		if ((v[i].y > p.y) != (v[j].y > p.y)) &&
+			(p.x < (v[j].x-v[i].x)*(p.y-v[i].y)/(v[j].y-v[i].y)+v[i].x) {
+			contained = !contained
+		}
+	}
+	return contained
+}
+
+type point struct{ x, y int }
+
+type polygon []point
+
+func highlightEdge(game *game.Game, window draw.Window) {
+	mx, my := window.MousePosition()
+	for _, tile := range game.GetTiles() {
+		hex := hexagonAtTile(tile.Position.X, tile.Position.Y)
+
+		r := rect{hex[1].x - tileSlopeHeight/2, hex[1].y, tileSlopeHeight, hex[2].y - hex[1].y}
+		if r.contains(mx, my) {
+			window.FillRect(r.x, r.y, r.w, r.h, draw.RGBA(1.0, 0, 0.5, 0.75))
+			return
+		}
+
+		r = rect{hex[3].x, hex[2].y, hex[2].x - hex[3].x, hex[3].y - hex[2].y}
+		if r.contains(mx, my) {
+			window.FillRect(r.x, r.y, r.w, r.h, draw.RGBA(1.0, 0, 0.5, 0.75))
+			return
+		}
+
+		r = rect{hex[4].x, hex[4].y, hex[3].x - hex[4].x, hex[3].y - hex[4].y}
+		if r.contains(mx, my) {
+			window.FillRect(r.x, r.y, r.w, r.h, draw.RGBA(1.0, 0, 0.5, 0.75))
+			return
+		}
+	}
+}
+
+func cornerToScreen(c game.TileCorner, game *game.Game) (x, y int) {
+	y = c.Y * (tileH - tileSlopeHeight)
+	if c.X%2 != c.Y%2 {
+		y += tileSlopeHeight
+	}
+	return c.X * tileW / 2, y
+}
+
+func screenToCorner(x, y, maxDist int) (corner game.Point, hit bool) {
+	tileX := (x + tileW/4) / (tileW / 2)
+	if abs(x-tileX*tileW/2) > maxDist {
+		return
+	}
+	topH := tileH - tileSlopeHeight
+	tileY := (y - tileSlopeHeight/2 + topH/2) / topH
+	nextScreenY := tileY * topH
+	if (tileX%2 == 0 && tileY%2 == 1) || (tileX%2 == 1 && tileY%2 == 0) {
+		nextScreenY += tileSlopeHeight
+	}
+	if abs(y-nextScreenY) > maxDist {
+		return
+	}
+	return game.Point{tileX, tileY}, true
+}
+
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
+func edgeToScreen(e game.TileEdge, game *game.Game) (x, y int) {
+	x = e.X * tileW / 4
+	y = tileSlopeHeight/2 + e.Y*(tileH-tileSlopeHeight)
+	if e.X%2 == 0 {
+		y = y + tileSlopeHeight/2 + (tileH-2*tileSlopeHeight)/2
+	}
+	return
+}
+
+func screenToEdge(x, y, maxDist int) (edge game.Point, hit bool) {
+	edge.X = (x + tileW/8) / (tileW / 4)
+	sectionH := tileH - tileSlopeHeight
+	edge.Y = y / sectionH
+	hit = isValidEdge(edge.X, edge.Y)
+	return
+}
+
+func isValidEdge(x, y int) bool {
+	if y%2 == 0 {
+		return x%4 != 0
+	}
+	return (x-2)%4 != 0
 }
