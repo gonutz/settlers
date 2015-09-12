@@ -10,39 +10,29 @@ import (
 
 func main() {
 	g := game.New([]game.Color{game.Red, game.Blue, game.White}, rand.Int)
-	g.Players[0].Settlements[0].Position = game.TileCorner{3, 1}
-	g.Players[0].Settlements[1].Position = game.TileCorner{4, 1}
-	g.Players[0].Settlements[2].Position = game.TileCorner{5, 1}
-	g.Players[1].Cities[0].Position = game.TileCorner{5, 2}
-	g.Players[1].Cities[1].Position = game.TileCorner{6, 2}
-	g.Players[1].Cities[2].Position = game.TileCorner{7, 2}
-	g.Players[1].Roads[0].Position = game.TileEdge{8, 1}
-	g.Players[2].Roads[0].Position = game.TileEdge{9, 1}
-	g.Players[0].Roads[0].Position = game.TileEdge{11, 1}
-	g.Players[0].Roads[1].Position = game.TileEdge{12, 1}
-	g.Players[2].Roads[1].Position = game.TileEdge{11, 2}
 	state := buildingSettlement
+	g.Players[0].Roads[0].Position = game.TileEdge{9, 2}
 
 	draw.RunWindow("Settlers", 1400, 1000, draw.Resizable, func(window draw.Window) {
 		if window.WasKeyPressed("escape") {
 			window.Close()
 		}
 
-		if window.WasKeyPressed("c") {
-			selectionMode = cornerSelection
-			// toggle between building settlements and buildings
-			if state == buildingSettlement {
-				state = buildingCity
-			} else {
-				state = buildingSettlement
-			}
+		if window.WasKeyPressed("s") {
+			state = buildingSettlement
 		}
-		if window.WasKeyPressed("e") {
-			selectionMode = edgeSelection
+		if window.WasKeyPressed("r") {
 			state = buildingRoad
 		}
-		if window.WasKeyPressed("t") {
-			selectionMode = tileSelection
+		if window.WasKeyPressed("c") {
+			state = buildingCity
+		}
+
+		for i := 1; i <= 4; i++ {
+			if window.WasKeyPressed(strconv.Itoa(i)) {
+				fmt.Println(g.CurrentPlayer, "->", i)
+				g.CurrentPlayer = i - 1
+			}
 		}
 
 		if state == buildingSettlement || state == buildingCity || state == buildingRoad {
@@ -80,11 +70,35 @@ func main() {
 		}
 
 		drawGame(g, window)
-		if selectionMode == cornerSelection {
-			highlightCorner(g, window)
+		if state == buildingSettlement || state == buildingCity {
+			mx, my := window.MousePosition()
+			corner, hit := screenToCorner(mx, my, 40)
+			if hit {
+				x, y := cornerToScreen(corner)
+				color := currentPlayerColor(g)
+				color.A = 0.75
+				window.FillEllipse(x-40, y-40, 80, 80, color)
+				if state == buildingSettlement && !g.CanBuildSettlementAt(game.TileCorner(corner)) {
+					color.A = 1
+					window.DrawLine(x-50, y-50, x+50, y+50, color)
+					window.DrawLine(x-50, y+50, x+50, y-50, color)
+				}
+			}
 		}
-		if selectionMode == edgeSelection {
-			highlightEdge(g, window)
+		if state == buildingRoad {
+			mx, my := window.MousePosition()
+			edge, hit := screenToEdge(mx, my, 40)
+			if hit {
+				x, y := edgeToScreen(game.TileEdge(edge))
+				color := currentPlayerColor(g)
+				color.A = 0.75
+				window.FillEllipse(x-40, y-40, 80, 80, color)
+				if !g.CanBuildRoadAt(game.TileEdge(edge)) {
+					color.A = 1
+					window.DrawLine(x-50, y-50, x+50, y+50, color)
+					window.DrawLine(x-50, y+50, x+50, y-50, color)
+				}
+			}
 		}
 	})
 }
@@ -98,13 +112,20 @@ const (
 	buildingRoad
 )
 
-var selectionMode int = edgeSelection
-
-const (
-	tileSelection int = iota
-	cornerSelection
-	edgeSelection
-)
+func currentPlayerColor(g *game.Game) draw.Color {
+	if g.CurrentPlayer < 0 || g.CurrentPlayer >= g.PlayerCount {
+		panic("invalid current player")
+	}
+	switch g.Players[g.CurrentPlayer].Color {
+	case game.Red:
+		return draw.Red
+	case game.Blue:
+		return draw.Blue
+	case game.Orange:
+		return draw.LightBrown
+	}
+	return draw.White
+}
 
 const (
 	tileW            = 200
@@ -118,33 +139,27 @@ func drawGame(g *game.Game, window draw.Window) {
 	// draw tiles and numbers
 	w, h := window.Size()
 	window.FillRect(0, 0, w, h, draw.DarkBlue)
-	mouseX, mouseY := window.MousePosition()
 	for _, tile := range g.GetTiles() {
 		x := tile.Position.X * tileW / 2
 		y := tile.Position.Y * tileYOffset
-		visible := window.IsMouseDown(draw.LeftButton) ||
-			!hexContains(x, y, mouseX, mouseY) ||
-			selectionMode != tileSelection
-		if visible {
-			var file string
-			switch tile.Terrain {
-			case game.Forest:
-				file = "./forest.png"
-			case game.Field:
-				file = "./field.png"
-			case game.Mountains:
-				file = "./mountains.png"
-			case game.Pasture:
-				file = "./pasture.png"
-			case game.Desert:
-				file = "./desert.png"
-			case game.Hills:
-				file = "./hills.png"
-			case game.Water:
-				file = "./water.png"
-			}
-			window.DrawImageFile(file, x, y)
+		var file string
+		switch tile.Terrain {
+		case game.Forest:
+			file = "./forest.png"
+		case game.Field:
+			file = "./field.png"
+		case game.Mountains:
+			file = "./mountains.png"
+		case game.Pasture:
+			file = "./pasture.png"
+		case game.Desert:
+			file = "./desert.png"
+		case game.Hills:
+			file = "./hills.png"
+		case game.Water:
+			file = "./water.png"
 		}
+		window.DrawImageFile(file, x, y)
 		if tile.Number != 0 || tile.Terrain == game.Desert {
 			number := strconv.Itoa(tile.Number)
 			const scale = 4
@@ -179,7 +194,7 @@ func drawGame(g *game.Game, window draw.Window) {
 			case game.Orange:
 				file = "./settlement_orange.png"
 			}
-			x, y := cornerToScreen(s.Position, g)
+			x, y := cornerToScreen(game.Point(s.Position))
 			window.DrawImageFile(file, x-30/2, y-42/2)
 		}
 		for _, s := range player.GetBuiltCities() {
@@ -194,7 +209,7 @@ func drawGame(g *game.Game, window draw.Window) {
 			case game.Orange:
 				file = "./city_orange.png"
 			}
-			x, y := cornerToScreen(s.Position, g)
+			x, y := cornerToScreen(game.Point(s.Position))
 			window.DrawImageFile(file, x-65/2, y-42/2)
 		}
 		for _, s := range player.GetBuiltRoads() {
@@ -207,9 +222,9 @@ func drawGame(g *game.Game, window draw.Window) {
 			case game.White:
 				color = draw.White
 			case game.Orange:
-				color = draw.LightBrown // TOEO have orange
+				color = draw.LightBrown // TODO have orange in prototype/draw
 			}
-			x, y := edgeToScreen(s.Position, g)
+			x, y := edgeToScreen(s.Position)
 			window.FillRect(x-20, y-20, 40, 40, color)
 		}
 	}
@@ -373,7 +388,7 @@ func highlightEdge(game *game.Game, window draw.Window) {
 	}
 }
 
-func cornerToScreen(c game.TileCorner, game *game.Game) (x, y int) {
+func cornerToScreen(c game.Point) (x, y int) {
 	y = c.Y * (tileH - tileSlopeHeight)
 	if c.X%2 != c.Y%2 {
 		y += tileSlopeHeight
@@ -405,7 +420,7 @@ func abs(x int) int {
 	return x
 }
 
-func edgeToScreen(e game.TileEdge, game *game.Game) (x, y int) {
+func edgeToScreen(e game.TileEdge) (x, y int) {
 	x = e.X * tileW / 4
 	y = tileSlopeHeight/2 + e.Y*(tileH-tileSlopeHeight)
 	if e.X%2 == 0 {

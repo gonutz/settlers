@@ -22,6 +22,9 @@ type Game struct {
 	// holding the achievement or -1 if it is not yet accomplished by anybody.
 	LongestRoad int
 	LargestArmy int
+	// this is a cache for not having to go through all tiles to find the one
+	// for a given position
+	//positionToTile map[TilePosition]Tile
 }
 
 type Tile struct {
@@ -255,8 +258,9 @@ func New(colors []Color, randomNumberGenerator func() int) *Game {
 		}
 	}
 	// set tile positions
-	for i, tile := range game.Tiles {
-		tile.Position = tilePositions[i]
+	for i := range game.Tiles {
+		game.Tiles[i].Position = tilePositions[i]
+		//game.positionToTile[tile.Position] = tile
 	}
 
 	numbers := []int{5, 2, 6, 3, 8, 10, 9, 12, 11, 4, 8, 10, 9, 4, 5, 6, 3, 11}
@@ -498,7 +502,7 @@ func (t Tile) Resource() Resource {
 	}
 }
 
-func AdjacentTileToCorner(c TileCorner) [3]TilePosition {
+func AdjacentTilesToCorner(c TileCorner) [3]TilePosition {
 	if (c.X+c.Y)%2 == 0 {
 		// two on top, one below
 		return [3]TilePosition{
@@ -558,4 +562,227 @@ func AdjacentEdgesToTile(p TilePosition) [6]TileEdge {
 		{p.X*2 + 3, p.Y + 1}, // bottom-right
 		{p.X*2 + 1, p.Y + 1}, // bottom-left
 	}
+}
+
+func AdjacentCornersToCorner(p TileCorner) [3]TileCorner {
+	if (p.X+p.Y)%2 == 0 {
+		return [3]TileCorner{
+			{p.X - 1, p.Y},
+			{p.X, p.Y - 1},
+			{p.X + 1, p.Y},
+		}
+	}
+	return [3]TileCorner{
+		{p.X - 1, p.Y},
+		{p.X, p.Y + 1},
+		{p.X + 1, p.Y},
+	}
+}
+
+func AdjacentEdgesToCorner(p TileCorner) [3]TileEdge {
+	if (p.X+p.Y)%2 == 0 {
+		return [3]TileEdge{
+			{p.X*2 - 1, p.Y},
+			{p.X * 2, p.Y - 1},
+			{p.X*2 + 1, p.Y},
+		}
+	}
+	return [3]TileEdge{
+		{p.X*2 - 1, p.Y},
+		{p.X * 2, p.Y},
+		{p.X*2 + 1, p.Y},
+	}
+}
+
+func AdjacentCornersToEdge(p TileEdge) [2]TileCorner {
+	if p.X%2 == 0 {
+		return [2]TileCorner{
+			{p.X / 2, p.Y},
+			{p.X / 2, p.Y + 1},
+		}
+	}
+	return [2]TileCorner{
+		{p.X / 2, p.Y},
+		{p.X/2 + 1, p.Y},
+	}
+}
+
+func AdjacentEdgesToEdge(p TileEdge) [4]TileEdge {
+	if p.X%2 == 0 {
+		return [4]TileEdge{
+			{p.X - 1, p.Y},
+			{p.X - 1, p.Y + 1},
+			{p.X + 1, p.Y},
+			{p.X + 1, p.Y + 1},
+		}
+	}
+	// the same as this => falling edge
+	//if (p.Y%2 == 0 && (p.X-1)%4 == 0) || (p.Y%2 == 1 && (p.X-3)%4 == 0) {
+	if (p.X-1-2*(p.Y&1))%4 == 0 {
+		return [4]TileEdge{
+			{p.X - 2, p.Y},
+			{p.X - 1, p.Y - 1},
+			{p.X + 1, p.Y},
+			{p.X + 2, p.Y},
+		}
+	}
+	return [4]TileEdge{
+		{p.X - 2, p.Y},
+		{p.X - 1, p.Y},
+		{p.X + 1, p.Y - 1},
+		{p.X + 2, p.Y},
+	}
+}
+
+func AdjacentTilesToTile(p TilePosition) [6]TilePosition {
+	return [6]TilePosition{
+		{p.X - 2, p.Y},
+		{p.X - 1, p.Y - 1},
+		{p.X - 1, p.Y + 1},
+		{p.X + 1, p.Y - 1},
+		{p.X + 1, p.Y + 1},
+		{p.X + 2, p.Y},
+	}
+}
+
+func (g *Game) GetTileAt(p TilePosition) (Tile, bool) {
+	//tile, ok := g.positionToTile[p]
+	//return tile, ok
+
+	for _, tile := range g.Tiles {
+		if tile.Position == p {
+			return tile, true
+		}
+	}
+	return Tile{}, false
+}
+
+// TODO in the beginning of the game, there does not have to be a road next to
+// the settlement
+func (g *Game) CanBuildSettlementAt(p TileCorner) bool {
+	if !g.CanPlayerBuildSettlement() {
+		return false
+	}
+
+	// check that at least one adjacent tile is not water, can't build in water!
+	tilePositions := AdjacentTilesToCorner(p)
+	atLeastOneTileIsLand := false
+	for _, pos := range tilePositions {
+		if tile, ok := g.GetTileAt(pos); ok && tile.Terrain != Water {
+			atLeastOneTileIsLand = true
+			break
+		}
+	}
+	if !atLeastOneTileIsLand {
+		return false
+	}
+
+	// check that all adjacent corners have no building on them
+	cornerPositions := AdjacentCornersToCorner(p)
+
+	for _, player := range g.GetPlayers() {
+		if player.HasBuildingOnCorner(p) {
+			// if there is a building on that corner
+			return false
+		}
+		// or if there is a building only one corner away
+		for _, corner := range cornerPositions {
+			if player.HasBuildingOnCorner(corner) {
+				return false
+			}
+		}
+	}
+
+	// TODO don't check this in the beginning of the game (first 2 settlements)
+	if !g.isFirstGamePhase() {
+		hasRoadToCorner := false
+		edgePositions := AdjacentEdgesToCorner(p)
+		for _, edge := range edgePositions {
+			if g.currentPlayer().HasRoadOnEdge(edge) {
+				hasRoadToCorner = true
+			}
+		}
+		return hasRoadToCorner
+	}
+
+	return true
+}
+
+func (p Player) HasBuildingOnCorner(corner TileCorner) bool {
+	for _, s := range p.GetBuiltSettlements() {
+		if s.Position == corner {
+			return true
+		}
+	}
+	for _, c := range p.GetBuiltCities() {
+		if c.Position == corner {
+			return true
+		}
+	}
+	return false
+}
+
+func (g *Game) currentPlayer() Player {
+	return g.Players[g.CurrentPlayer]
+}
+
+func (g *Game) isFirstGamePhase() bool {
+	// make sure there are no cities and each player has AT MOST 2 roads and 2
+	// settlements
+	for _, p := range g.GetPlayers() {
+		if len(p.GetBuiltCities()) > 0 ||
+			len(p.GetBuiltSettlements()) > 2 ||
+			len(p.GetBuiltRoads()) > 2 {
+			return false
+		}
+	}
+	// if now any player has less than two roads, that player has not placed her
+	// first two settlements and roads and thus this is still the first phase
+	for _, p := range g.GetPlayers() {
+		if len(p.GetBuiltRoads()) < 2 {
+			return true
+		}
+	}
+	return false
+}
+
+func (p Player) HasRoadOnEdge(edge TileEdge) bool {
+	for _, e := range p.GetBuiltRoads() {
+		if e.Position == edge {
+			return true
+		}
+	}
+	return false
+}
+
+func (g *Game) CanBuildRoadAt(edge TileEdge) bool {
+	// can't build here if there alredy is a road
+	for _, p := range g.GetPlayers() {
+		if p.HasRoadOnEdge(edge) {
+			return false
+		}
+	}
+
+	// can build if there is a building on an adjacent corner
+	corners := AdjacentCornersToEdge(edge)
+	for _, corner := range corners {
+		if g.currentPlayer().HasBuildingOnCorner(corner) {
+			return true
+		}
+	}
+
+	// TODO this is not correct, in the first phase you can only build a road
+	// next to THE LAST BUILT SETTLEMENT, this will allow to build the second
+	// settlement and place the second road next to the first settlement
+	if !g.isFirstGamePhase() {
+		// can build if there is a road adjacent to the edge
+		edges := AdjacentEdgesToEdge(edge)
+		for _, e := range edges {
+			if g.currentPlayer().HasRoadOnEdge(e) {
+				return true
+			}
+		}
+	}
+
+	return false
 }
