@@ -1,0 +1,13 @@
+player's turn:
+1. roll the dice
+2. if was 7:
+ - players >= 8 cards remove half of them
+ - player moves knight
+ - if knight is next to buildings: player draws random card from one of the adjacent players
+3. deal resources to players
+4. until the player is done, do one of these:
+ - buy a card
+ - play a card (only one per turn)
+ - build road/settlement/city
+ - trade with bank
+ - trade with other players
