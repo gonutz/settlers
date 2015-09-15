@@ -123,73 +123,12 @@ func main() {
 		background = back
 	}()
 
-	img, err := LoadGLImageFromFile("./terrain_tiles.png")
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	water, _ := img.SubImage(1, 1, 200, 212)
-	hills, _ := img.SubImage(203, 1, 200, 212)
-	field, _ := img.SubImage(1, 215, 200, 212)
-	pasture, _ := img.SubImage(203, 215, 200, 212)
-	forest, _ := img.SubImage(1, 429, 200, 212)
-	mountains, _ := img.SubImage(405, 1, 200, 212)
-	desert, _ := img.SubImage(405, 215, 200, 212)
-	numberPlate, _ := img.SubImage(607, 1, 70, 70)
-	var numbers [13]*glImage
-	numbers[2], _ = img.SubImage(0*72+1, 643, 70, 70)
-	numbers[3], _ = img.SubImage(1*72+1, 643, 70, 70)
-	numbers[4], _ = img.SubImage(2*72+1, 643, 70, 70)
-	numbers[5], _ = img.SubImage(3*72+1, 643, 70, 70)
-	numbers[6], _ = img.SubImage(4*72+1, 643, 70, 70)
-	numbers[8], _ = img.SubImage(5*72+1, 643, 70, 70)
-	numbers[9], _ = img.SubImage(6*72+1, 643, 70, 70)
-	numbers[10], _ = img.SubImage(7*72+1, 643, 70, 70)
-	numbers[11], _ = img.SubImage(8*72+1, 643, 70, 70)
-	numbers[12], _ = img.SubImage(9*72+1, 643, 70, 70)
-
 	drawGame := func() {
-		if true {
-			if backImg == nil && background != nil {
-				backImg, _ = NewGLImageFromImage(background)
-			}
-			if backImg != nil {
-				backImg.DrawAtXY(0, 0)
-			}
-		} else {
-			// this sends separate gl draw calls for each tile, this however
-			// screws up the borders between tiles, the background will shine
-			// through due to alpha artifacts when blending
-			for _, tile := range g.GetTiles() {
-				x := tile.Position.X * tileW / 2
-				y := tile.Position.Y * tileYOffset
-				var img *glImage
-				switch tile.Terrain {
-				case game.Forest:
-					img = forest
-				case game.Field:
-					img = field
-				case game.Mountains:
-					img = mountains
-				case game.Pasture:
-					img = pasture
-				case game.Desert:
-					img = desert
-				case game.Hills:
-					img = hills
-				case game.Water:
-					img = water
-				}
-				img.DrawAtXY(x, y)
-				if tile.Number != 0 {
-					numberImg := numbers[tile.Number]
-					x, y := tileToScreen(tile.Position)
-					x += (tileW - numberImg.Width) / 2
-					y += (tileH - numberImg.Height) / 2
-					numberPlate.DrawAtXY(x, y)
-					numberImg.DrawAtXY(x, y)
-				}
-			}
+		if backImg == nil && background != nil {
+			backImg, _ = NewGLImageFromImage(background)
+		}
+		if backImg != nil {
+			backImg.DrawAtXY(0, 0)
 		}
 	}
 
@@ -341,8 +280,6 @@ func drawGameIntoImage(dest draw.Image, g *game.Game, tileImage image.Image) {
 		case game.Water:
 			img = water
 		}
-		//draw.Draw(dest, image.Rect(x, y, x+img.Bounds().Dx(), y+img.Bounds().Dy()),
-		//img, img.Bounds().Min, draw.Over)
 		draw.Draw(dest, img.Bounds().Sub(img.Bounds().Min).Add(image.Pt(x, y)),
 			img, img.Bounds().Min, draw.Over)
 		if tile.Number != 0 {
@@ -351,10 +288,10 @@ func drawGameIntoImage(dest draw.Image, g *game.Game, tileImage image.Image) {
 			x += (tileW - numberImg.Bounds().Dx()) / 2
 			y += (tileH - numberImg.Bounds().Dy()) / 2
 			draw.Draw(dest,
-				image.Rect(x, y, x+numberPlate.Bounds().Dx(), y+numberPlate.Bounds().Dy()),
+				numberPlate.Bounds().Sub(numberPlate.Bounds().Min).Add(image.Pt(x, y)),
 				numberPlate, numberPlate.Bounds().Min, draw.Over)
 			draw.Draw(dest,
-				image.Rect(x, y, x+numberImg.Bounds().Dx(), y+numberImg.Bounds().Dy()),
+				numberImg.Bounds().Sub(numberImg.Bounds().Min).Add(image.Pt(x, y)),
 				numberImg, numberImg.Bounds().Min, draw.Over)
 		}
 	}
