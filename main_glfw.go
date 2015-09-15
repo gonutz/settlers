@@ -42,7 +42,7 @@ func main() {
 	glfw.WindowHint(glfw.ContextVersionMinor, 0)
 	glfw.WindowHint(glfw.Resizable, glfw.True)
 
-	window, err := glfw.CreateWindow(windowW, windowH, "Settlers", nil, nil)
+	window, err := glfw.CreateWindow(10, 10, "Settlers", nil, nil)
 	if err != nil {
 		fmt.Println("glfw.CreateWindow():", err)
 		return
@@ -137,6 +137,8 @@ func main() {
 	showCursor := 0
 	start := time.Now()
 	frames := 0
+
+	window.SetSize(windowW, windowH)
 
 	for !window.ShouldClose() {
 		glfw.PollEvents()
