@@ -12,6 +12,7 @@ import (
 	_ "image/png"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"runtime"
 	"time"
 )
@@ -20,15 +21,8 @@ func init() {
 	runtime.LockOSThread()
 }
 
-var windowW = 640
-var windowH = 480
-
-const (
-	tileW           = 200
-	tileH           = 212
-	tileSlopeHeight = 50
-	tileYOffset     = tileH - tileSlopeHeight
-)
+var windowW = 800
+var windowH = 600
 
 func main() {
 	if err := glfw.Init(); err != nil {
@@ -55,7 +49,7 @@ func main() {
 	}
 
 	stash := fontstash.New(512, 512)
-	fontID, err := stash.AddFont("./MorrisRoman-Black.ttf")
+	fontID, err := stash.AddFont(resourcePath("MorrisRoman-Black.ttf"))
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -68,7 +62,25 @@ func main() {
 	gl.MatrixMode(gl.MODELVIEW)
 	gl.LoadIdentity()
 
-	g := game.New([]game.Color{game.Red, game.White, game.Blue}, rand.Int)
+	g := game.New([]game.Color{game.Red, game.White, game.Blue, game.Orange}, rand.Int)
+	// NOTE for testing purposes, initialize some players
+	g.Players[0].Settlements[0].Position = game.TileCorner{5, 2}
+	g.Players[0].Roads[0].Position = game.TileEdge{11, 2}
+	g.Players[0].Roads[1].Position = game.TileEdge{10, 2}
+	g.Players[0].Roads[2].Position = game.TileEdge{11, 3}
+	g.Players[1].Cities[0].Position = game.TileCorner{7, 2}
+	g.Players[1].Roads[0].Position = game.TileEdge{13, 2}
+	g.Players[2].Cities[0].Position = game.TileCorner{8, 1}
+	g.Players[2].Roads[0].Position = game.TileEdge{16, 1}
+	g.Players[2].Roads[1].Position = game.TileEdge{17, 2}
+	g.Players[3].Settlements[0].Position = game.TileCorner{5, 4}
+	g.Players[3].Roads[0].Position = game.TileEdge{11, 4}
+	g.Players[3].Roads[1].Position = game.TileEdge{13, 4}
+	g.Players[3].Roads[2].Position = game.TileEdge{15, 4}
+	g.Players[3].Roads[3].Position = game.TileEdge{17, 4}
+	g.Players[3].Roads[4].Position = game.TileEdge{19, 4}
+	g.Players[3].Roads[5].Position = game.TileEdge{21, 4}
+	g.Robber.Position = game.TilePosition{5, 4}
 
 	var lines []string
 	window.SetCharCallback(func(_ *glfw.Window, r rune) {
@@ -102,33 +114,76 @@ func main() {
 		gl.Viewport(0, 0, int32(w), int32(h))
 	})
 
-	var background image.Image
-	var backImg *glImage
+	var background, tilesImage image.Image
+	var backImg, tiles *glImage
 	go func() {
-		tileImageFile, err := os.Open("./terrain_tiles.png")
+		tileImageFile, err := os.Open(resourcePath("terrain_tiles.png"))
 		if err != nil {
 			fmt.Println(err)
 			return
 		}
 		defer tileImageFile.Close()
-		tilesImage, _, err := image.Decode(tileImageFile)
+		tilesImage, _, err = image.Decode(tileImageFile)
 		if err != nil {
 			fmt.Println(err)
 			return
 		}
+
 		gameW, gameH := 7*200, 7*tileYOffset+tileSlopeHeight
 		back := image.NewRGBA(image.Rect(0, 0, gameW, gameH))
 		clearToTransparent(back)
-		drawGameIntoImage(back, g, tilesImage)
+		drawGameBackgroundIntoImage(back, g, tilesImage)
 		background = back
 	}()
+
+	var settlementImages [4]*glImage
+	var cityImages [4]*glImage
+	var roadUpImages, roadDownImages, roadVerticalImages [4]*glImage
+	var robber *glImage
 
 	drawGame := func() {
 		if backImg == nil && background != nil {
 			backImg, _ = NewGLImageFromImage(background)
+			tiles, _ = NewGLImageFromImage(tilesImage)
+
+			for i, c := range []game.Color{game.White, game.Blue, game.Orange, game.Red} {
+				settlementImages[c], _ = tiles.SubImage(1+i*34, 715, 32, 41)
+				cityImages[c], _ = tiles.SubImage(1+i*55, 758, 53, 62)
+				roadUpImages[c], _ = tiles.SubImage(679, 1+i*115, 104, 59)
+				roadDownImages[c], _ = tiles.SubImage(785, 1+i*115, 104, 59)
+				roadVerticalImages[c], _ = tiles.SubImage(891, 1+i*115, 24, 113)
+			}
+			robber, _ = tiles.SubImage(917, 1, 65, 97)
 		}
 		if backImg != nil {
 			backImg.DrawAtXY(0, 0)
+
+			for _, p := range g.GetPlayers() {
+				for _, r := range p.GetBuiltRoads() {
+					x, y := edgeToScreen(r.Position)
+					img := roadUpImages[p.Color]
+					if isEdgeVertical(r.Position) {
+						img = roadVerticalImages[p.Color]
+					}
+					if isEdgeGoingDown(r.Position) {
+						img = roadDownImages[p.Color]
+					}
+					img.DrawAtXY(x-img.Width/2, y-img.Height/2)
+				}
+				for _, s := range p.GetBuiltSettlements() {
+					x, y := cornerToScreen(s.Position)
+					img := settlementImages[p.Color]
+					img.DrawAtXY(x-img.Width/2, y-(5*img.Height/8))
+				}
+				for _, c := range p.GetBuiltCities() {
+					x, y := cornerToScreen(c.Position)
+					img := cityImages[p.Color]
+					img.DrawAtXY(x-img.Width/2, y-(5*img.Height/8))
+				}
+			}
+
+			x, y, w, h := tileToScreen(g.Robber.Position)
+			robber.DrawAtXY(x+(w-robber.Width)/2, y+(h-robber.Height)/2)
 		}
 	}
 
@@ -145,18 +200,23 @@ func main() {
 
 		gl.MatrixMode(gl.PROJECTION)
 		gl.LoadIdentity()
-		gameW, gameH := 7.0*200, 7.0*tileYOffset+tileSlopeHeight
+		const controlsHeight = 0 // TODO reserve are for stats and menus
+		gameW, gameH := 7.0*200, 7.0*tileYOffset+tileSlopeHeight+controlsHeight
 		gameRatio := gameW / gameH
 		windowRatio := float64(windowW) / float64(windowH)
+		var left, right, bottom, top float64
 		if windowRatio > gameRatio {
 			// window is wider than game => borders left and right
 			border := (windowRatio*gameH - gameW) / 2
-			gl.Ortho(-border, border+gameW, gameH, 0, -1, 1)
+			left, right = -border, border+gameW
+			bottom, top = gameH, 0
 		} else {
 			// window is higher than game => borders on top and bottom
 			border := (gameW/windowRatio - gameH) / 2
-			gl.Ortho(0, gameW, gameH+border, -border, -1, 1)
+			left, right = 0, gameW
+			bottom, top = gameH+border, -border
 		}
+		gl.Ortho(left, right, bottom, top, -1, 1)
 		gl.ClearColor(0, 0, 1, 1)
 		gl.Clear(gl.COLOR_BUFFER_BIT)
 
@@ -167,7 +227,7 @@ func main() {
 			const fontSize = 35
 			const cursorText = "_"
 			cursor := ""
-			if showCursor > 500 {
+			if showCursor > 60 {
 				cursor = cursorText
 			}
 			for i, line := range lines {
@@ -187,7 +247,7 @@ func main() {
 
 		window.SwapBuffers()
 
-		showCursor = (showCursor + 1) % 1000
+		showCursor = (showCursor + 1) % 120
 		frames++
 		if time.Now().Sub(start).Seconds() >= 1.0 {
 			fmt.Println(frames, "fps")
@@ -203,10 +263,6 @@ func removeLastRune(s string) string {
 		b = i
 	}
 	return s[:b]
-}
-
-func tileToScreen(p game.TilePosition) (x, y int) {
-	return p.X * tileW / 2, p.Y * tileYOffset
 }
 
 type menu struct {
@@ -247,7 +303,7 @@ func clearToTransparent(img draw.Image) {
 	draw.Draw(img, img.Bounds(), image.NewUniform(col.RGBA{0, 0, 0, 0}), image.ZP, draw.Src)
 }
 
-func drawGameIntoImage(dest draw.Image, g *game.Game, tileImage image.Image) {
+func drawGameBackgroundIntoImage(dest draw.Image, g *game.Game, tileImage image.Image) {
 	forest := subImage{tileImage, bounds(1, 429, 200, 212)}
 	field := subImage{tileImage, bounds(1, 215, 200, 212)}
 	moutains := subImage{tileImage, bounds(405, 1, 200, 212)}
@@ -262,7 +318,7 @@ func drawGameIntoImage(dest draw.Image, g *game.Game, tileImage image.Image) {
 		numbers[n] = subImage{tileImage, bounds(i*72+1, 643, 70, 70)}
 	}
 
-	for _, tile := range g.GetTiles() {
+	for _, tile := range g.Tiles {
 		x := tile.Position.X * tileW / 2
 		y := tile.Position.Y * tileYOffset
 		var img image.Image
@@ -286,9 +342,9 @@ func drawGameIntoImage(dest draw.Image, g *game.Game, tileImage image.Image) {
 			img, img.Bounds().Min, draw.Over)
 		if tile.Number != 0 {
 			numberImg := numbers[tile.Number]
-			x, y := tileToScreen(tile.Position)
-			x += (tileW - numberImg.Bounds().Dx()) / 2
-			y += (tileH - numberImg.Bounds().Dy()) / 2
+			x, y, w, h := tileToScreen(tile.Position)
+			x += (w - numberImg.Bounds().Dx()) / 2
+			y += (h - numberImg.Bounds().Dy()) / 2
 			draw.Draw(dest,
 				numberPlate.Bounds().Sub(numberPlate.Bounds().Min).Add(image.Pt(x, y)),
 				numberPlate, numberPlate.Bounds().Min, draw.Over)
@@ -303,11 +359,6 @@ func bounds(x, y, w, h int) image.Rectangle {
 	return image.Rect(x, y, x+w, y+h)
 }
 
-type subImage struct {
-	image.Image
-	bounds image.Rectangle
-}
-
-func (i subImage) Bounds() image.Rectangle {
-	return i.bounds
+func resourcePath(filename string) string {
+	return filepath.Join(os.Getenv("GOPATH"), "src", "github.com", "gonutz", "settlers", filename)
 }

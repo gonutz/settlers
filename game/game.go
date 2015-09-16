@@ -1,7 +1,7 @@
 package game
 
 // Tiles: 5 resources: brick, lumber, wool, grain, ore
-// or water: nothing, 5 2:1 havens, 3:1 haven
+// or water: nothing, 5 2:1 harbors, 3:1 harbors
 // or desert.
 // Each Player has: 5 settlements, 4 cities, 15 streets.
 // There is one robber.
@@ -68,10 +68,14 @@ const (
 )
 
 // TODO give harbor an edge or two corners for making clear where it is
-type Harbor int
+type Harbor struct {
+	Kind HarborKind
+}
+
+type HarborKind int
 
 const (
-	NoHarbor Harbor = iota
+	NoHarbor HarborKind = iota
 	WoolHarbor
 	LumberHarbor
 	BrickHarbor
@@ -140,7 +144,7 @@ const (
 const ResourceCount = 5
 
 type Robber struct {
-	Position int
+	Position TilePosition
 }
 
 type DevelopmentCard struct {
@@ -178,15 +182,15 @@ func New(colors []Color, randomNumberGenerator func() int) *Game {
 	}
 
 	harbors := &[]Tile{
-		{Terrain: Water, Harbor: LumberHarbor},
-		{Terrain: Water, Harbor: WoolHarbor},
-		{Terrain: Water, Harbor: BrickHarbor},
-		{Terrain: Water, Harbor: OreHarbor},
-		{Terrain: Water, Harbor: GrainHarbor},
-		{Terrain: Water, Harbor: ThreeToOneHarbor},
-		{Terrain: Water, Harbor: ThreeToOneHarbor},
-		{Terrain: Water, Harbor: ThreeToOneHarbor},
-		{Terrain: Water, Harbor: ThreeToOneHarbor},
+		{Terrain: Water, Harbor: Harbor{LumberHarbor}},
+		{Terrain: Water, Harbor: Harbor{WoolHarbor}},
+		{Terrain: Water, Harbor: Harbor{BrickHarbor}},
+		{Terrain: Water, Harbor: Harbor{OreHarbor}},
+		{Terrain: Water, Harbor: Harbor{GrainHarbor}},
+		{Terrain: Water, Harbor: Harbor{ThreeToOneHarbor}},
+		{Terrain: Water, Harbor: Harbor{ThreeToOneHarbor}},
+		{Terrain: Water, Harbor: Harbor{ThreeToOneHarbor}},
+		{Terrain: Water, Harbor: Harbor{ThreeToOneHarbor}},
 	}
 	shuffle(*harbors)
 	game.Tiles[0] = rand(harbors)
@@ -252,9 +256,9 @@ func New(colors []Color, randomNumberGenerator func() int) *Game {
 	game.Tiles[30] = rand(terrains)
 	game.Tiles[31] = rand(terrains)
 	// find the desert and place the robber on it
-	for i, tile := range game.Tiles {
+	for _, tile := range game.Tiles {
 		if tile.Terrain == Desert {
-			game.Robber.Position = i
+			game.Robber.Position = tile.Position
 		}
 	}
 	// set tile positions
@@ -422,27 +426,6 @@ func (g *Game) BuildRoad(p Point) {
 			return
 		}
 	}
-}
-
-func (g *Game) GetTiles() []PositionTile {
-	// TODO buffer these
-	tiles := make([]PositionTile, len(tilePositions))
-	for i := range tilePositions /*TODO g.Tiles*/ {
-		tiles[i].Tile = g.Tiles[i]
-		tiles[i].Position = tilePositions[i]
-		tiles[i].HasRobber = g.Robber.Position == i
-	}
-	return tiles
-}
-
-func (g *Game) GetTilePosition(tile int) (x, y int) {
-	return tilePositions[tile].X, tilePositions[tile].Y
-}
-
-type PositionTile struct {
-	Tile
-	Position  TilePosition
-	HasRobber bool
 }
 
 var tilePositions = []TilePosition{
