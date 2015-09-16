@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"github.com/go-gl/gl/v2.1/gl"
 	"github.com/go-gl/glfw/v3.1/glfw"
@@ -14,6 +15,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -23,6 +26,9 @@ func init() {
 
 var windowW = 800
 var windowH = 600
+
+var images = make(map[string]image.Image)
+var glImages = make(map[string]*glImage)
 
 func main() {
 	if err := glfw.Init(); err != nil {
@@ -114,46 +120,57 @@ func main() {
 		gl.Viewport(0, 0, int32(w), int32(h))
 	})
 
-	var background, tilesImage image.Image
-	var backImg, tiles *glImage
-	go func() {
-		tileImageFile, err := os.Open(resourcePath("terrain_tiles.png"))
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		defer tileImageFile.Close()
-		tilesImage, _, err = image.Decode(tileImageFile)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
+	if err := loadImages(); err != nil {
+		fmt.Println(err)
+		return
+	}
 
+	var background image.Image
+	var backImg *glImage
+	go func() {
 		gameW, gameH := 7*200, 7*tileYOffset+tileSlopeHeight
 		back := image.NewRGBA(image.Rect(0, 0, gameW, gameH))
 		clearToTransparent(back)
-		drawGameBackgroundIntoImage(back, g, tilesImage)
+		drawGameBackgroundIntoImage(back, g)
 		background = back
 	}()
 
-	var settlementImages [4]*glImage
-	var cityImages [4]*glImage
-	var roadUpImages, roadDownImages, roadVerticalImages [4]*glImage
-	var robber *glImage
+	gameColorToString := func(c game.Color) string {
+		switch c {
+		case game.Red:
+			return "red"
+		case game.Orange:
+			return "orange"
+		case game.Blue:
+			return "blue"
+		default:
+			return "white"
+		}
+	}
+
+	roadImage := func(pos game.TileEdge, c game.Color) *glImage {
+		color := gameColorToString(c)
+		dir := "up"
+		if isEdgeVertical(pos) {
+			dir = "vertical"
+		}
+		if isEdgeGoingDown(pos) {
+			dir = "down"
+		}
+		return glImages["road_"+color+"_"+dir]
+	}
+
+	settlementImage := func(pos game.TileCorner, c game.Color) *glImage {
+		return glImages["settlement_"+gameColorToString(c)]
+	}
+
+	cityImage := func(pos game.TileCorner, c game.Color) *glImage {
+		return glImages["city_"+gameColorToString(c)]
+	}
 
 	drawGame := func() {
 		if backImg == nil && background != nil {
 			backImg, _ = NewGLImageFromImage(background)
-			tiles, _ = NewGLImageFromImage(tilesImage)
-
-			for i, c := range []game.Color{game.White, game.Blue, game.Orange, game.Red} {
-				settlementImages[c], _ = tiles.SubImage(1+i*34, 715, 32, 41)
-				cityImages[c], _ = tiles.SubImage(1+i*55, 758, 53, 62)
-				roadUpImages[c], _ = tiles.SubImage(679, 1+i*115, 104, 59)
-				roadDownImages[c], _ = tiles.SubImage(785, 1+i*115, 104, 59)
-				roadVerticalImages[c], _ = tiles.SubImage(891, 1+i*115, 24, 113)
-			}
-			robber, _ = tiles.SubImage(917, 1, 65, 97)
 		}
 		if backImg != nil {
 			backImg.DrawAtXY(0, 0)
@@ -161,28 +178,23 @@ func main() {
 			for _, p := range g.GetPlayers() {
 				for _, r := range p.GetBuiltRoads() {
 					x, y := edgeToScreen(r.Position)
-					img := roadUpImages[p.Color]
-					if isEdgeVertical(r.Position) {
-						img = roadVerticalImages[p.Color]
-					}
-					if isEdgeGoingDown(r.Position) {
-						img = roadDownImages[p.Color]
-					}
+					img := roadImage(r.Position, p.Color)
 					img.DrawAtXY(x-img.Width/2, y-img.Height/2)
 				}
 				for _, s := range p.GetBuiltSettlements() {
 					x, y := cornerToScreen(s.Position)
-					img := settlementImages[p.Color]
+					img := settlementImage(s.Position, p.Color)
 					img.DrawAtXY(x-img.Width/2, y-(5*img.Height/8))
 				}
 				for _, c := range p.GetBuiltCities() {
 					x, y := cornerToScreen(c.Position)
-					img := cityImages[p.Color]
+					img := cityImage(c.Position, p.Color)
 					img.DrawAtXY(x-img.Width/2, y-(5*img.Height/8))
 				}
 			}
 
 			x, y, w, h := tileToScreen(g.Robber.Position)
+			robber := glImages["robber"]
 			robber.DrawAtXY(x+(w-robber.Width)/2, y+(h-robber.Height)/2)
 		}
 	}
@@ -257,6 +269,49 @@ func main() {
 	}
 }
 
+func loadImages() error {
+	imgFile, err := os.Open(filepath.Join("images", "all.png"))
+	if err != nil {
+		return err
+	}
+	defer imgFile.Close()
+
+	img, _, err := image.Decode(imgFile)
+	if err != nil {
+		return err
+	}
+
+	glImage, err := NewGLImageFromImage(img)
+	if err != nil {
+		return err
+	}
+
+	tableFile, err := os.Open(filepath.Join("images", "table.txt"))
+	if err != nil {
+		return err
+	}
+	defer tableFile.Close()
+	scanner := bufio.NewScanner(tableFile)
+	for scanner.Scan() {
+		parts := strings.Split(scanner.Text(), " ")
+		if len(parts) != 5 {
+			continue
+		}
+		id := parts[0]
+		x, _ := strconv.Atoi(parts[1])
+		y, _ := strconv.Atoi(parts[2])
+		w, _ := strconv.Atoi(parts[3])
+		h, _ := strconv.Atoi(parts[4])
+		images[id] = subImage{img, bounds(x, y, w, h)}
+		glImages[id], err = glImage.SubImage(x, y, w, h)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func removeLastRune(s string) string {
 	b := 0
 	for i := range s {
@@ -300,22 +355,14 @@ func (f *font) Write(text string, x, y float64) {
 }
 
 func clearToTransparent(img draw.Image) {
-	draw.Draw(img, img.Bounds(), image.NewUniform(col.RGBA{0, 0, 0, 0}), image.ZP, draw.Src)
+	draw.Draw(img, img.Bounds(), image.NewUniform(col.RGBA{0, 0, 0, 0}),
+		image.ZP, draw.Src)
 }
 
-func drawGameBackgroundIntoImage(dest draw.Image, g *game.Game, tileImage image.Image) {
-	forest := subImage{tileImage, bounds(1, 429, 200, 212)}
-	field := subImage{tileImage, bounds(1, 215, 200, 212)}
-	moutains := subImage{tileImage, bounds(405, 1, 200, 212)}
-	pasture := subImage{tileImage, bounds(203, 215, 200, 212)}
-	hills := subImage{tileImage, bounds(203, 1, 200, 212)}
-	desert := subImage{tileImage, bounds(405, 215, 200, 212)}
-	water := subImage{tileImage, bounds(1, 1, 200, 212)}
-
-	numberPlate := subImage{tileImage, bounds(607, 1, 70, 70)}
+func drawGameBackgroundIntoImage(dest draw.Image, g *game.Game) {
 	var numbers [13]image.Image
-	for i, n := range []int{2, 3, 4, 5, 6, 8, 9, 10, 11, 12} {
-		numbers[n] = subImage{tileImage, bounds(i*72+1, 643, 70, 70)}
+	for _, n := range []int{2, 3, 4, 5, 6, 8, 9, 10, 11, 12} {
+		numbers[n] = images[strconv.Itoa(n)]
 	}
 
 	for _, tile := range g.Tiles {
@@ -324,19 +371,19 @@ func drawGameBackgroundIntoImage(dest draw.Image, g *game.Game, tileImage image.
 		var img image.Image
 		switch tile.Terrain {
 		case game.Forest:
-			img = forest
+			img = images["tile_forest"]
 		case game.Field:
-			img = field
+			img = images["tile_field"]
 		case game.Mountains:
-			img = moutains
+			img = images["tile_mountains"]
 		case game.Pasture:
-			img = pasture
+			img = images["tile_pasture"]
 		case game.Desert:
-			img = desert
+			img = images["tile_desert"]
 		case game.Hills:
-			img = hills
+			img = images["tile_hills"]
 		case game.Water:
-			img = water
+			img = images["tile_water"]
 		}
 		draw.Draw(dest, img.Bounds().Sub(img.Bounds().Min).Add(image.Pt(x, y)),
 			img, img.Bounds().Min, draw.Over)
@@ -345,6 +392,7 @@ func drawGameBackgroundIntoImage(dest draw.Image, g *game.Game, tileImage image.
 			x, y, w, h := tileToScreen(tile.Position)
 			x += (w - numberImg.Bounds().Dx()) / 2
 			y += (h - numberImg.Bounds().Dy()) / 2
+			numberPlate := images["number_plate"]
 			draw.Draw(dest,
 				numberPlate.Bounds().Sub(numberPlate.Bounds().Min).Add(image.Pt(x, y)),
 				numberPlate, numberPlate.Bounds().Min, draw.Over)
@@ -360,5 +408,6 @@ func bounds(x, y, w, h int) image.Rectangle {
 }
 
 func resourcePath(filename string) string {
-	return filepath.Join(os.Getenv("GOPATH"), "src", "github.com", "gonutz", "settlers", filename)
+	return filepath.Join(os.Getenv("GOPATH"),
+		"src", "github.com", "gonutz", "settlers", filename)
 }
