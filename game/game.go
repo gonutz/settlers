@@ -69,7 +69,8 @@ const (
 
 // TODO give harbor an edge or two corners for making clear where it is
 type Harbor struct {
-	Kind HarborKind
+	Kind      HarborKind
+	Direction Direction
 }
 
 type HarborKind int
@@ -82,6 +83,17 @@ const (
 	OreHarbor
 	GrainHarbor
 	ThreeToOneHarbor
+)
+
+type Direction int
+
+const (
+	Right Direction = iota
+	TopRight
+	TopLeft
+	Left
+	BottomLeft
+	BottomRight
 )
 
 type Player struct {
@@ -182,26 +194,35 @@ func New(colors []Color, randomNumberGenerator func() int) *Game {
 	}
 
 	harbors := &[]Tile{
-		{Terrain: Water, Harbor: Harbor{LumberHarbor}},
-		{Terrain: Water, Harbor: Harbor{WoolHarbor}},
-		{Terrain: Water, Harbor: Harbor{BrickHarbor}},
-		{Terrain: Water, Harbor: Harbor{OreHarbor}},
-		{Terrain: Water, Harbor: Harbor{GrainHarbor}},
-		{Terrain: Water, Harbor: Harbor{ThreeToOneHarbor}},
-		{Terrain: Water, Harbor: Harbor{ThreeToOneHarbor}},
-		{Terrain: Water, Harbor: Harbor{ThreeToOneHarbor}},
-		{Terrain: Water, Harbor: Harbor{ThreeToOneHarbor}},
+		{Terrain: Water, Harbor: Harbor{Kind: LumberHarbor}},
+		{Terrain: Water, Harbor: Harbor{Kind: WoolHarbor}},
+		{Terrain: Water, Harbor: Harbor{Kind: BrickHarbor}},
+		{Terrain: Water, Harbor: Harbor{Kind: OreHarbor}},
+		{Terrain: Water, Harbor: Harbor{Kind: GrainHarbor}},
+		{Terrain: Water, Harbor: Harbor{Kind: ThreeToOneHarbor}},
+		{Terrain: Water, Harbor: Harbor{Kind: ThreeToOneHarbor}},
+		{Terrain: Water, Harbor: Harbor{Kind: ThreeToOneHarbor}},
+		{Terrain: Water, Harbor: Harbor{Kind: ThreeToOneHarbor}},
 	}
 	shuffle(*harbors)
 	game.Tiles[0] = rand(harbors)
+	game.Tiles[0].Harbor.Direction = BottomRight
 	game.Tiles[2] = rand(harbors)
+	game.Tiles[2].Harbor.Direction = BottomLeft
 	game.Tiles[8] = rand(harbors)
+	game.Tiles[8].Harbor.Direction = BottomLeft
 	game.Tiles[9] = rand(harbors)
+	game.Tiles[9].Harbor.Direction = Right
 	game.Tiles[21] = rand(harbors)
+	game.Tiles[21].Harbor.Direction = Left
 	game.Tiles[22] = rand(harbors)
+	game.Tiles[22].Harbor.Direction = Right
 	game.Tiles[32] = rand(harbors)
+	game.Tiles[32].Harbor.Direction = TopLeft
 	game.Tiles[33] = rand(harbors)
+	game.Tiles[33].Harbor.Direction = TopRight
 	game.Tiles[35] = rand(harbors)
+	game.Tiles[35].Harbor.Direction = TopLeft
 
 	water := Tile{Terrain: Water}
 	game.Tiles[1] = water

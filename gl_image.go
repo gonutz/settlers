@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"github.com/go-gl/gl/v2.1/gl"
 	"image"
 	"image/draw"
@@ -77,8 +78,10 @@ func NewGLImageFromImage(img image.Image) (*glImage, error) {
 }
 
 func (img *glImage) SubImage(x, y, w, h int) (*glImage, error) {
-	if x < 0 || y < 0 || x+w >= img.Width || y+h >= img.Height {
-		return nil, errors.New("sub image lies outside image")
+	if x < 0 || y < 0 || x+w > img.Width || y+h > img.Height {
+		return nil, errors.New(fmt.Sprintf(
+			"sub image %v,%v,%v,%v lies outside image",
+			x, y, w, h))
 	}
 	// TODO consider deeper nesting
 	fw, fh := 1.0/float32(img.Width), 1.0/float32(img.Height)

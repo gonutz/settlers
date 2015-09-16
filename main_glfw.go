@@ -31,6 +31,8 @@ var images = make(map[string]image.Image)
 var glImages = make(map[string]*glImage)
 
 func main() {
+	rand.Seed(time.Now().UnixNano())
+
 	if err := glfw.Init(); err != nil {
 		fmt.Println("glfw.Init():", err)
 		return
@@ -53,6 +55,10 @@ func main() {
 		fmt.Println("gl.Init():", err)
 		return
 	}
+
+	var maxTextureSize int32
+	gl.GetIntegerv(gl.MAX_TEXTURE_SIZE, &maxTextureSize)
+	fmt.Println(maxTextureSize)
 
 	stash := fontstash.New(512, 512)
 	fontID, err := stash.AddFont(resourcePath("MorrisRoman-Black.ttf"))
@@ -366,8 +372,7 @@ func drawGameBackgroundIntoImage(dest draw.Image, g *game.Game) {
 	}
 
 	for _, tile := range g.Tiles {
-		x := tile.Position.X * tileW / 2
-		y := tile.Position.Y * tileYOffset
+		x, y, w, h := tileToScreen(tile.Position)
 		var img image.Image
 		switch tile.Terrain {
 		case game.Forest:
@@ -387,6 +392,49 @@ func drawGameBackgroundIntoImage(dest draw.Image, g *game.Game) {
 		}
 		draw.Draw(dest, img.Bounds().Sub(img.Bounds().Min).Add(image.Pt(x, y)),
 			img, img.Bounds().Min, draw.Over)
+
+		if tile.Terrain == game.Water && tile.Harbor.Kind != game.NoHarbor {
+			id := "harbor_"
+			switch tile.Harbor.Direction {
+			case game.Right:
+				id += "right"
+			case game.TopRight:
+				id += "top_right"
+			case game.TopLeft:
+				id += "top_left"
+			case game.Left:
+				id += "left"
+			case game.BottomLeft:
+				id += "bottom_left"
+			case game.BottomRight:
+				id += "bottom_right"
+			}
+			img := images[id]
+			draw.Draw(dest, img.Bounds().Sub(img.Bounds().Min).Add(image.Pt(x, y)),
+				img, img.Bounds().Min, draw.Over)
+
+			id = "harbor_"
+			switch tile.Harbor.Kind {
+			case game.WoolHarbor:
+				id += "wool"
+			case game.LumberHarbor:
+				id += "lumber"
+			case game.BrickHarbor:
+				id += "brick"
+			case game.OreHarbor:
+				id += "ore"
+			case game.GrainHarbor:
+				id += "grain"
+			case game.ThreeToOneHarbor:
+				id += "3_1"
+			}
+			img = images[id]
+			harborX := x + (w-img.Bounds().Dx())/2
+			harborY := y + (h-img.Bounds().Dy())/2
+			draw.Draw(dest, img.Bounds().Sub(img.Bounds().Min).Add(image.Pt(harborX, harborY)),
+				img, img.Bounds().Min, draw.Over)
+		}
+
 		if tile.Number != 0 {
 			numberImg := numbers[tile.Number]
 			x, y, w, h := tileToScreen(tile.Position)
