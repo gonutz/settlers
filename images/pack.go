@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-var outputImageFile = flag.String("o", "./all.png", "Output file name, make the a PNG.")
+var outputImageFile = flag.String("o", "./all.png", "Atlas output file name, make this a PNG.")
 var tableFile = flag.String("t", "./table.txt", "Table file containing the mappings.")
 var binSize = flag.Int("s", 1024, "Bin size, the image will be s by s pixels big.")
 
@@ -20,7 +20,7 @@ func main() {
 	flag.Parse()
 
 	if err := os.Remove(*outputImageFile); err != nil {
-		panic(err)
+		fmt.Println(err)
 	}
 
 	var imagePaths []string
@@ -43,9 +43,8 @@ func main() {
 }
 
 func pack(paths []string) error {
-	const size = 1024
-	packer := binpacker.New(size, size)
-	bin := image.NewRGBA(image.Rect(0, 0, size, size))
+	packer := binpacker.New(*binSize, *binSize)
+	bin := image.NewRGBA(image.Rect(0, 0, *binSize, *binSize))
 	boundsTable := make(map[string]binpacker.Rect)
 
 	for _, path := range paths {
@@ -87,7 +86,7 @@ func id(path string) string {
 
 func saveTable(table map[string]binpacker.Rect, path string) error {
 	if err := os.Remove(path); err != nil {
-		return err
+		fmt.Println(err)
 	}
 
 	file, err := os.Create(path)

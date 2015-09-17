@@ -1,0 +1,8 @@
+#!/bin/bash
+cd images
+go run pack.go -s=1024
+cd ..
+
+go build
+
+./settlers

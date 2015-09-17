@@ -27,8 +27,22 @@ func init() {
 var windowW = 800
 var windowH = 600
 
+var cam = &camera{}
+var mouseX, mouseY float64
+var mouseIn bool
+
 var images = make(map[string]image.Image)
 var glImages = make(map[string]*glImage)
+
+type gameState int
+
+const (
+	idle gameState = iota
+	buildingSettlement
+	buildingRoad
+)
+
+var state = buildingRoad
 
 func main() {
 	rand.Seed(time.Now().UnixNano())
@@ -74,25 +88,20 @@ func main() {
 	gl.MatrixMode(gl.MODELVIEW)
 	gl.LoadIdentity()
 
-	g := game.New([]game.Color{game.Red, game.White, game.Blue, game.Orange}, rand.Int)
-	// NOTE for testing purposes, initialize some players
+	g := game.New([]game.Color{game.Red, game.White, game.Blue}, rand.Int)
 	g.Players[0].Settlements[0].Position = game.TileCorner{5, 2}
+	g.Players[0].Cities[0].Position = game.TileCorner{7, 2}
 	g.Players[0].Roads[0].Position = game.TileEdge{11, 2}
-	g.Players[0].Roads[1].Position = game.TileEdge{10, 2}
-	g.Players[0].Roads[2].Position = game.TileEdge{11, 3}
-	g.Players[1].Cities[0].Position = game.TileCorner{7, 2}
-	g.Players[1].Roads[0].Position = game.TileEdge{13, 2}
-	g.Players[2].Cities[0].Position = game.TileCorner{8, 1}
-	g.Players[2].Roads[0].Position = game.TileEdge{16, 1}
-	g.Players[2].Roads[1].Position = game.TileEdge{17, 2}
-	g.Players[3].Settlements[0].Position = game.TileCorner{5, 4}
-	g.Players[3].Roads[0].Position = game.TileEdge{11, 4}
-	g.Players[3].Roads[1].Position = game.TileEdge{13, 4}
-	g.Players[3].Roads[2].Position = game.TileEdge{15, 4}
-	g.Players[3].Roads[3].Position = game.TileEdge{17, 4}
-	g.Players[3].Roads[4].Position = game.TileEdge{19, 4}
-	g.Players[3].Roads[5].Position = game.TileEdge{21, 4}
-	g.Robber.Position = game.TilePosition{5, 4}
+	g.Players[0].Roads[1].Position = game.TileEdge{13, 2}
+	g.Players[1].Settlements[0].Position = game.TileCorner{5, 4}
+	g.Players[1].Settlements[1].Position = game.TileCorner{7, 4}
+	g.Players[1].Roads[0].Position = game.TileEdge{11, 4}
+	g.Players[1].Roads[1].Position = game.TileEdge{13, 4}
+	g.Players[2].Settlements[0].Position = game.TileCorner{9, 4}
+	g.Players[2].Settlements[1].Position = game.TileCorner{11, 4}
+	g.Players[2].Roads[0].Position = game.TileEdge{19, 4}
+	g.Players[2].Roads[1].Position = game.TileEdge{21, 4}
+	g.Robber.Position = game.TilePosition{7, 2}
 
 	var lines []string
 	window.SetCharCallback(func(_ *glfw.Window, r rune) {
@@ -104,8 +113,59 @@ func main() {
 	window.SetCharModsCallback(func(_ *glfw.Window, r rune, _ glfw.ModifierKey) {
 	})
 	window.SetKeyCallback(func(_ *glfw.Window, key glfw.Key, _ int, action glfw.Action, _ glfw.ModifierKey) {
+		if action == glfw.Release {
+			return
+		}
 		if key == glfw.KeyEscape {
 			window.SetShouldClose(true)
+		}
+		if key == glfw.Key1 {
+			g.CurrentPlayer = 0
+		}
+		if key == glfw.Key2 {
+			g.CurrentPlayer = 1
+		}
+		if key == glfw.Key3 {
+			g.CurrentPlayer = 2
+		}
+		if key == glfw.Key4 {
+			g.CurrentPlayer = 3
+		}
+		if key == glfw.KeyR {
+			state = buildingRoad
+		}
+		if key == glfw.KeyS {
+			state = buildingSettlement
+		}
+		if key == glfw.KeyKP2 {
+			g.DealResources(2)
+		}
+		if key == glfw.KeyKP3 {
+			g.DealResources(3)
+		}
+		if key == glfw.KeyKP4 {
+			g.DealResources(4)
+		}
+		if key == glfw.KeyKP5 {
+			g.DealResources(5)
+		}
+		if key == glfw.KeyKP6 {
+			g.DealResources(6)
+		}
+		if key == glfw.KeyKP8 {
+			g.DealResources(8)
+		}
+		if key == glfw.KeyKP9 {
+			g.DealResources(9)
+		}
+		if key == glfw.KeyKP0 {
+			g.DealResources(10)
+		}
+		if key == glfw.KeyKP1 {
+			g.DealResources(11)
+		}
+		if key == glfw.KeyKP7 {
+			g.DealResources(12)
 		}
 		if len(lines) > 0 && key == glfw.KeyBackspace && (action == glfw.Press || action == glfw.Repeat) {
 			if len(lines[len(lines)-1]) == 0 {
@@ -123,6 +183,7 @@ func main() {
 	window.SetInputMode(glfw.CursorMode, glfw.CursorNormal)
 	window.SetSizeCallback(func(_ *glfw.Window, w, h int) {
 		windowW, windowH = w, h
+		cam.WindowWidth, cam.WindowHeight = w, h
 		gl.Viewport(0, 0, int32(w), int32(h))
 	})
 
@@ -166,13 +227,33 @@ func main() {
 		return glImages["road_"+color+"_"+dir]
 	}
 
-	settlementImage := func(pos game.TileCorner, c game.Color) *glImage {
+	settlementImage := func(c game.Color) *glImage {
 		return glImages["settlement_"+gameColorToString(c)]
 	}
 
-	cityImage := func(pos game.TileCorner, c game.Color) *glImage {
+	cityImage := func(c game.Color) *glImage {
 		return glImages["city_"+gameColorToString(c)]
 	}
+
+	// TODO this is for showing the road/settlement being built currently
+	var movingSettlementCorner game.TileCorner
+	var movingSettlementVisible bool
+	var movingRoadEdge game.TileEdge
+	var movingRoadVisible bool
+	window.SetCursorPosCallback(func(_ *glfw.Window, x, y float64) {
+		mouseX, mouseY = x, y
+		gameX, gameY := cam.screenToGame(x, y)
+		movingSettlementCorner, movingSettlementVisible = screenToCorner(gameX, gameY)
+		movingRoadEdge, movingRoadVisible = screenToEdge(gameX, gameY)
+	})
+	window.SetCursorEnterCallback(func(_ *glfw.Window, entered bool) {
+		mouseIn = entered
+		if entered == false {
+			movingSettlementVisible = false
+			movingRoadVisible = true
+		}
+	})
+	//////////////////////////////////////////////////////////////////
 
 	drawGame := func() {
 		if backImg == nil && background != nil {
@@ -189,13 +270,34 @@ func main() {
 				}
 				for _, s := range p.GetBuiltSettlements() {
 					x, y := cornerToScreen(s.Position)
-					img := settlementImage(s.Position, p.Color)
+					img := settlementImage(p.Color)
 					img.DrawAtXY(x-img.Width/2, y-(5*img.Height/8))
 				}
 				for _, c := range p.GetBuiltCities() {
 					x, y := cornerToScreen(c.Position)
-					img := cityImage(c.Position, p.Color)
+					img := cityImage(p.Color)
 					img.DrawAtXY(x-img.Width/2, y-(5*img.Height/8))
+				}
+			}
+
+			if state == buildingSettlement && movingSettlementVisible && mouseIn {
+				color := [4]float32{1, 1, 1, 1}
+				x, y := cornerToScreen(movingSettlementCorner)
+				if !movingSettlementVisible || !g.CanBuildSettlementAt(movingSettlementCorner) {
+					color = [4]float32{0.7, 0.7, 0.7, 0.7}
+					x, y = cam.screenToGame(mouseX, mouseY)
+				}
+				img := settlementImage(g.GetCurrentPlayer().Color)
+				// TODO duplicate code:
+				img.DrawColoredAtXY(x-img.Width/2, y-(5*img.Height/8), color)
+			}
+			if state == buildingRoad && movingRoadVisible && mouseIn {
+				color := [4]float32{1, 1, 1, 1}
+				x, y := edgeToScreen(movingRoadEdge)
+				if !(!movingRoadVisible || !g.CanBuildRoadAt(movingRoadEdge)) {
+					img := roadImage(movingRoadEdge, g.GetCurrentPlayer().Color)
+					// TODO duplicate code:
+					img.DrawColoredAtXY(x-img.Width/2, y-(5*img.Height/8), color)
 				}
 			}
 
@@ -205,7 +307,7 @@ func main() {
 		}
 	}
 
-	buildMenu := &menu{color{0.5, 0.4, 0.8, 0.8}, rect{0, 500, 800, 250}}
+	buildMenu := &menu{color{0.5, 0.4, 0.8, 0.9}, rect{0, 500, 800, 250}}
 
 	showCursor := 0
 	start := time.Now()
@@ -235,15 +337,25 @@ func main() {
 			bottom, top = gameH+border, -border
 		}
 		gl.Ortho(left, right, bottom, top, -1, 1)
+		cam.Left, cam.Right, cam.Bottom, cam.Top = left, right, bottom, top
 		gl.ClearColor(0, 0, 1, 1)
 		gl.Clear(gl.COLOR_BUFFER_BIT)
 
 		drawGame()
 
+		lines = make([]string, g.PlayerCount*6)
+		for i, player := range g.GetPlayers() {
+			lines[i*6+0] = fmt.Sprintf("player %v has %v ore", i+1, player.Resources[game.Ore])
+			lines[i*6+1] = fmt.Sprintf("player %v has %v grain", i+1, player.Resources[game.Grain])
+			lines[i*6+2] = fmt.Sprintf("player %v has %v lumber", i+1, player.Resources[game.Lumber])
+			lines[i*6+3] = fmt.Sprintf("player %v has %v wool", i+1, player.Resources[game.Wool])
+			lines[i*6+4] = fmt.Sprintf("player %v has %v brick", i+1, player.Resources[game.Brick])
+		}
+
 		if len(lines) > 0 {
 			stash.BeginDraw()
 			const fontSize = 35
-			const cursorText = "_"
+			const cursorText = "" //"_"
 			cursor := ""
 			if showCursor > 60 {
 				cursor = cursorText
@@ -276,7 +388,7 @@ func main() {
 }
 
 func loadImages() error {
-	imgFile, err := os.Open(filepath.Join("images", "all.png"))
+	imgFile, err := os.Open(resourcePath("images", "all.png"))
 	if err != nil {
 		return err
 	}
@@ -292,7 +404,7 @@ func loadImages() error {
 		return err
 	}
 
-	tableFile, err := os.Open(filepath.Join("images", "table.txt"))
+	tableFile, err := os.Open(resourcePath("images", "table.txt"))
 	if err != nil {
 		return err
 	}
@@ -308,6 +420,10 @@ func loadImages() error {
 		y, _ := strconv.Atoi(parts[2])
 		w, _ := strconv.Atoi(parts[3])
 		h, _ := strconv.Atoi(parts[4])
+		x++
+		y++
+		w -= 2
+		h -= 2
 		images[id] = subImage{img, bounds(x, y, w, h)}
 		glImages[id], err = glImage.SubImage(x, y, w, h)
 		if err != nil {
@@ -455,7 +571,13 @@ func bounds(x, y, w, h int) image.Rectangle {
 	return image.Rect(x, y, x+w, y+h)
 }
 
-func resourcePath(filename string) string {
-	return filepath.Join(os.Getenv("GOPATH"),
-		"src", "github.com", "gonutz", "settlers", filename)
+func resourcePath(foldersAndFile ...string) string {
+	parts := []string{
+		os.Getenv("GOPATH"),
+		"src", "github.com", "gonutz", "settlers",
+	}
+	for _, f := range foldersAndFile {
+		parts = append(parts, f)
+	}
+	return filepath.Join(parts...)
 }

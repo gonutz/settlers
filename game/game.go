@@ -276,16 +276,16 @@ func New(colors []Color, randomNumberGenerator func() int) *Game {
 	game.Tiles[29] = rand(terrains)
 	game.Tiles[30] = rand(terrains)
 	game.Tiles[31] = rand(terrains)
+
+	// set tile positions
+	for i := range game.Tiles {
+		game.Tiles[i].Position = tilePositions[i]
+	}
 	// find the desert and place the robber on it
 	for _, tile := range game.Tiles {
 		if tile.Terrain == Desert {
 			game.Robber.Position = tile.Position
 		}
-	}
-	// set tile positions
-	for i := range game.Tiles {
-		game.Tiles[i].Position = tilePositions[i]
-		//game.positionToTile[tile.Position] = tile
 	}
 
 	numbers := []int{5, 2, 6, 3, 8, 10, 9, 12, 11, 4, 8, 10, 9, 4, 5, 6, 3, 11}
@@ -331,7 +331,7 @@ func New(colors []Color, randomNumberGenerator func() int) *Game {
 // this is necessary to animate the cards flying to the players
 func (g *Game) DealResources(dice int) {
 	for _, tile := range g.Tiles {
-		if tile.Number == dice {
+		if tile.Number == dice && g.Robber.Position != tile.Position {
 			corners := AdjacentCornersToTile(tile.Position)
 			for _, corner := range corners {
 				for playerIndex, p := range g.GetPlayers() {
@@ -349,33 +349,6 @@ func (g *Game) DealResources(dice int) {
 			}
 		}
 	}
-	// TODO re-create this functionality
-	/*
-		for p := 0; p < g.PlayerCount; p++ {
-			player := &g.Players[p]
-
-			var buildings []building
-			for _, settlement := range player.Settlements {
-				buildings = append(buildings, settlement)
-			}
-			for _, city := range player.Cities {
-				buildings = append(buildings, city)
-			}
-
-			for _, b := range buildings {
-				if b.isSet() {
-					for _, bordering := range b.borderingTiles() {
-						tile := g.Tiles[bordering]
-						if g.Robber.Position != bordering && tile.Number == dice {
-							// the tile's resource cannot be Nothing because it as a
-							// number that was rolled by the dice (!= 0)
-							player.Resources[tile.Resource()] += b.resourceCount()
-						}
-					}
-				}
-			}
-		}
-	*/
 }
 
 func (g *Game) GetPlayers() []Player {
@@ -661,8 +634,6 @@ func (g *Game) GetTileAt(p TilePosition) (Tile, bool) {
 	return Tile{}, false
 }
 
-// TODO in the beginning of the game, there does not have to be a road next to
-// the settlement
 func (g *Game) CanBuildSettlementAt(p TileCorner) bool {
 	if !g.CanPlayerBuildSettlement() {
 		return false
@@ -697,12 +668,11 @@ func (g *Game) CanBuildSettlementAt(p TileCorner) bool {
 		}
 	}
 
-	// TODO don't check this in the beginning of the game (first 2 settlements)
 	if !g.isFirstGamePhase() {
 		hasRoadToCorner := false
 		edgePositions := AdjacentEdgesToCorner(p)
 		for _, edge := range edgePositions {
-			if g.currentPlayer().HasRoadOnEdge(edge) {
+			if g.GetCurrentPlayer().HasRoadOnEdge(edge) {
 				hasRoadToCorner = true
 			}
 		}
@@ -726,7 +696,7 @@ func (p Player) HasBuildingOnCorner(corner TileCorner) bool {
 	return false
 }
 
-func (g *Game) currentPlayer() Player {
+func (g *Game) GetCurrentPlayer() Player {
 	return g.Players[g.CurrentPlayer]
 }
 
@@ -760,7 +730,7 @@ func (p Player) HasRoadOnEdge(edge TileEdge) bool {
 }
 
 func (g *Game) CanBuildRoadAt(edge TileEdge) bool {
-	// can't build here if there alredy is a road
+	// can't build here if there already is a road on this edge
 	for _, p := range g.GetPlayers() {
 		if p.HasRoadOnEdge(edge) {
 			return false
@@ -768,25 +738,44 @@ func (g *Game) CanBuildRoadAt(edge TileEdge) bool {
 	}
 
 	// can build if there is a building on an adjacent corner
-	corners := AdjacentCornersToEdge(edge)
-	for _, corner := range corners {
-		if g.currentPlayer().HasBuildingOnCorner(corner) {
-			return true
+	hasBuildingNextToIt := false
+	var buildingCorner TileCorner
+	for _, corner := range AdjacentCornersToEdge(edge) {
+		if g.GetCurrentPlayer().HasBuildingOnCorner(corner) {
+			hasBuildingNextToIt = true
+			buildingCorner = corner
+			break
 		}
 	}
 
-	// TODO this is not correct, in the first phase you can only build a road
-	// next to THE LAST BUILT SETTLEMENT, this will allow to build the second
-	// settlement and place the second road next to the first settlement
-	if !g.isFirstGamePhase() {
+	if g.isFirstGamePhase() {
+		if !hasBuildingNextToIt {
+			return false
+		}
+		// In the first game phase, you can only build a road next to your
+		// settlement. When it is time for the second road, there are two
+		// settlements already and you have to build the road next to the new
+		// one. The new one is that without any adjacent roads so if this
+		// settlement already has a road next to it we return false, the player
+		// has to build adjacent to the other settlement.
+		if len(g.GetCurrentPlayer().GetBuiltSettlements()) == 2 {
+			for _, edge := range AdjacentEdgesToCorner(buildingCorner) {
+				if g.GetCurrentPlayer().HasRoadOnEdge(edge) {
+					return false
+				}
+			}
+		}
+		return true
+	} else {
+		if hasBuildingNextToIt {
+			return true
+		}
 		// can build if there is a road adjacent to the edge
-		edges := AdjacentEdgesToEdge(edge)
-		for _, e := range edges {
-			if g.currentPlayer().HasRoadOnEdge(e) {
+		for _, e := range AdjacentEdgesToEdge(edge) {
+			if g.GetCurrentPlayer().HasRoadOnEdge(e) {
 				return true
 			}
 		}
+		return false
 	}
-
-	return false
 }

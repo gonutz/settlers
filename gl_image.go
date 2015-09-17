@@ -97,24 +97,30 @@ func (img *glImage) SubImage(x, y, w, h int) (*glImage, error) {
 }
 
 func (img *glImage) DrawAtXY(x, y int) {
+	img.DrawColoredAtXY(x, y, [4]float32{1, 1, 1, 1})
+}
+
+func (img *glImage) DrawColoredAtXY(x, y int, color [4]float32) {
+	// TODO have the state knwon globally somewhere so this does not need to be
+	// called all the time
 	gl.Enable(gl.TEXTURE_2D)
 	gl.BindTexture(gl.TEXTURE_2D, img.id)
 
 	gl.Begin(gl.QUADS)
 
-	gl.Color4f(1, 1, 1, 1)
+	gl.Color4f(color[0], color[1], color[2], color[3])
 	gl.TexCoord2f(img.left, img.top)
 	gl.Vertex2i(int32(x), int32(y))
 
-	gl.Color4f(1, 1, 1, 1)
+	gl.Color4f(color[0], color[1], color[2], color[3])
 	gl.TexCoord2f(img.right, img.top)
 	gl.Vertex2i(int32(x+img.Width), int32(y))
 
-	gl.Color4f(1, 1, 1, 1)
+	gl.Color4f(color[0], color[1], color[2], color[3])
 	gl.TexCoord2f(img.right, img.bottom)
 	gl.Vertex2i(int32(x+img.Width), int32(y+img.Height))
 
-	gl.Color4f(1, 1, 1, 1)
+	gl.Color4f(color[0], color[1], color[2], color[3])
 	gl.TexCoord2f(img.left, img.bottom)
 	gl.Vertex2i(int32(x), int32(y+img.Height))
 
