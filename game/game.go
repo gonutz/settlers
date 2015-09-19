@@ -11,6 +11,7 @@ package game
 
 // TODO store rand seed here in Game? and use fixed rand function?
 type Game struct {
+	State            State
 	Tiles            [37]Tile
 	Players          [4]Player
 	PlayerCount      int
@@ -22,10 +23,16 @@ type Game struct {
 	// holding the achievement or -1 if it is not yet accomplished by anybody.
 	LongestRoad int
 	LargestArmy int
-	// this is a cache for not having to go through all tiles to find the one
-	// for a given position
-	//positionToTile map[TilePosition]Tile
 }
+
+type State int
+
+const (
+	BuildingFirstSettlement State = iota
+	BuildingFirstRoad
+	BuildingSecondSettlement
+	BuildingSecondRoad
+)
 
 type Tile struct {
 	Position TilePosition
@@ -67,7 +74,6 @@ const (
 	Water
 )
 
-// TODO give harbor an edge or two corners for making clear where it is
 type Harbor struct {
 	Kind      HarborKind
 	Direction Direction
@@ -178,6 +184,8 @@ const (
 
 func New(colors []Color, randomNumberGenerator func() int) *Game {
 	var game Game
+
+	game.State = BuildingFirstSettlement
 
 	rand := func(tiles *[]Tile) Tile {
 		tile := (*tiles)[0]
