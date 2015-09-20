@@ -1,5 +1,7 @@
 package game
 
+import "errors"
+
 // Tiles: 5 resources: brick, lumber, wool, grain, ore
 // or water: nothing, 5 2:1 harbors, 3:1 harbors
 // or desert.
@@ -23,6 +25,8 @@ type Game struct {
 	// holding the achievement or -1 if it is not yet accomplished by anybody.
 	LongestRoad int
 	LargestArmy int
+	// seed is for random number generation
+	rand *randomNumberGenerator
 }
 
 type State int
@@ -32,6 +36,7 @@ const (
 	BuildingFirstRoad
 	BuildingSecondSettlement
 	BuildingSecondRoad
+	FirstPhaseIsOver
 )
 
 type Tile struct {
@@ -58,9 +63,45 @@ type Tile struct {
 //    | 12 || 32 |
 //    \____/\____/
 //
-type TilePosition Point
+type TilePosition point
 
-type Point struct{ X, Y int }
+type point struct{ X, Y int }
+
+func (p point) IsValid() bool { return p.X != 0 || p.Y != 0 }
+
+// TileCorners are numbered in zigzag lines, the top-most line has y=0 and x
+// is sequentiel, starting at 0 on the left-most tile (the one that is only half
+// way visible horizonally).
+//
+// 00  20  40
+//  \  /\  /\
+//   \/  \/  \/
+//   10  30  50
+//   ||  ||  ||
+//   ||  ||  ||
+//   11  31  51
+//   /\  /\  /\
+//  /  \/  \/
+// 01  21  41
+//
+type TileCorner point
+
+// TileEdges are TODO comment and finish drawing
+//
+// x     x     x
+//  \    /\    /\
+//   \  /  \  /  \
+//    \/    \/    \/
+//    x     x     x
+//    |     |     |
+//    |     |     |
+//    |     |     |
+//    x     x     x
+//    /\    /\    /\
+//   /  \  /  \  /
+//  /    \/    \/
+// x     x     x
+type TileEdge point
 
 type Terrain int
 
@@ -121,30 +162,6 @@ const (
 
 type Settlement struct{ Position TileCorner }
 
-// TileCorners are numbered in zgizag lines, the top-most line has y=0 and x
-// is sequentiel, starting at 0 on the left-most tile (the one that is only half
-// way visible horizonally).
-//
-// 00  20  40
-//  \  /\  /\
-//   \/  \/  \/
-//   10  30  50
-//   ||  ||  ||
-//   ||  ||  ||
-//   11  31  51
-//   /\  /\  /\
-//  /  \/  \/
-// 01  21  41
-//
-type TileCorner Point
-
-func (c TileCorner) IsValid() bool { return c.X != 0 || c.Y != 0 }
-
-// TODO comment this one and show the drawing
-type TileEdge Point
-
-func (e TileEdge) IsValid() bool { return e.X != 0 || e.Y != 0 }
-
 type City struct{ Position TileCorner }
 
 type Road struct{ Position TileEdge }
@@ -182,10 +199,11 @@ const (
 	TakeTwoResources
 )
 
-func New(colors []Color, randomNumberGenerator func() int) *Game {
+func New(colors []Color, randomSeed int) *Game {
 	var game Game
 
 	game.State = BuildingFirstSettlement
+	game.rand = newRNG(randomSeed)
 
 	rand := func(tiles *[]Tile) Tile {
 		tile := (*tiles)[0]
@@ -196,7 +214,7 @@ func New(colors []Color, randomNumberGenerator func() int) *Game {
 	shuffle := func(tiles []Tile) {
 		count := len(tiles)
 		for i := 0; i < count-1; i++ {
-			j := i + randomNumberGenerator()%(count-i)
+			j := i + game.rand.next()%(count-i)
 			tiles[i], tiles[j] = tiles[j], tiles[i]
 		}
 	}
@@ -387,9 +405,9 @@ func (p Player) GetBuiltRoads() []Road {
 	return p.Roads[:last]
 }
 
-func (g *Game) CanPlayerBuildSettlement() bool {
-	// the player can build as long as the last settlement has not been placed
-	return !g.Players[g.CurrentPlayer].Settlements[4].isSet()
+func (g *Game) RemainingSettlements() int {
+	p := g.GetCurrentPlayer()
+	return len(p.Settlements) - len(p.GetBuiltSettlements())
 }
 
 func (g *Game) CanPlayerBuildCity() bool {
@@ -400,17 +418,7 @@ func (g *Game) CanPlayerBuildRoad() bool {
 	return !g.Players[g.CurrentPlayer].Roads[14].isSet()
 }
 
-func (g *Game) BuildSettlement(p Point) {
-	player := &g.Players[g.CurrentPlayer]
-	for i := range player.Settlements {
-		if !player.Settlements[i].isSet() {
-			player.Settlements[i].Position = TileCorner(p)
-			return
-		}
-	}
-}
-
-func (g *Game) BuildCity(p Point) {
+func (g *Game) BuildCity(p point) {
 	player := &g.Players[g.CurrentPlayer]
 	for i := range player.Cities {
 		if !player.Cities[i].isSet() {
@@ -420,7 +428,7 @@ func (g *Game) BuildCity(p Point) {
 	}
 }
 
-func (g *Game) BuildRoad(p Point) {
+func (g *Game) BuildRoad(p point) {
 	player := &g.Players[g.CurrentPlayer]
 	for i := range player.Roads {
 		if !player.Roads[i].isSet() {
@@ -454,18 +462,18 @@ func (g *Game) NextTurn() {
 
 // IsSet returns true if the settlement is currently placed on the game field.
 func (s Settlement) isSet() bool {
-	return s.Position.IsValid()
+	return point(s.Position).IsValid()
 }
 
 func (Settlement) resourceCount() int { return 1 }
 
 // IsSet returns true if the settlement is currently placed on the game field.
 func (c City) isSet() bool {
-	return c.Position.IsValid()
+	return point(c.Position).IsValid()
 }
 
 func (r Road) isSet() bool {
-	return r.Position.IsValid()
+	return point(r.Position).IsValid()
 }
 
 func (City) resourceCount() int { return 2 }
@@ -631,9 +639,6 @@ func AdjacentTilesToTile(p TilePosition) [6]TilePosition {
 }
 
 func (g *Game) GetTileAt(p TilePosition) (Tile, bool) {
-	//tile, ok := g.positionToTile[p]
-	//return tile, ok
-
 	for _, tile := range g.Tiles {
 		if tile.Position == p {
 			return tile, true
@@ -642,13 +647,30 @@ func (g *Game) GetTileAt(p TilePosition) (Tile, bool) {
 	return Tile{}, false
 }
 
-func (g *Game) CanBuildSettlementAt(p TileCorner) bool {
-	if !g.CanPlayerBuildSettlement() {
+func (g *Game) BuildSettlement(c TileCorner) error {
+	if !g.CanBuildSettlementAt(c) {
+		return IllegalMove
+	}
+
+	player := &g.Players[g.CurrentPlayer]
+	for i := range player.Settlements {
+		if !player.Settlements[i].isSet() {
+			player.Settlements[i].Position = c
+			return nil
+		}
+	}
+	return IllegalMove
+}
+
+var IllegalMove = errors.New("illegal move")
+
+func (g *Game) CanBuildSettlementAt(c TileCorner) bool {
+	if g.RemainingSettlements() == 0 {
 		return false
 	}
 
 	// check that at least one adjacent tile is not water, can't build in water!
-	tilePositions := AdjacentTilesToCorner(p)
+	tilePositions := AdjacentTilesToCorner(c)
 	atLeastOneTileIsLand := false
 	for _, pos := range tilePositions {
 		if tile, ok := g.GetTileAt(pos); ok && tile.Terrain != Water {
@@ -661,10 +683,10 @@ func (g *Game) CanBuildSettlementAt(p TileCorner) bool {
 	}
 
 	// check that all adjacent corners have no building on them
-	cornerPositions := AdjacentCornersToCorner(p)
+	cornerPositions := AdjacentCornersToCorner(c)
 
 	for _, player := range g.GetPlayers() {
-		if player.HasBuildingOnCorner(p) {
+		if player.HasBuildingOnCorner(c) {
 			// if there is a building on that corner
 			return false
 		}
@@ -676,9 +698,14 @@ func (g *Game) CanBuildSettlementAt(p TileCorner) bool {
 		}
 	}
 
+	// if we are in the first phase, this is all we need to know to build
+	if g.State == BuildingFirstSettlement || g.State == BuildingSecondSettlement {
+		return true
+	}
+
 	if !g.isFirstGamePhase() {
 		hasRoadToCorner := false
-		edgePositions := AdjacentEdgesToCorner(p)
+		edgePositions := AdjacentEdgesToCorner(c)
 		for _, edge := range edgePositions {
 			if g.GetCurrentPlayer().HasRoadOnEdge(edge) {
 				hasRoadToCorner = true

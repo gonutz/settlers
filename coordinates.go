@@ -9,6 +9,31 @@ const (
 	tileYOffset     = tileH - tileSlopeHeight
 )
 
+func screenToCorner(x, y int) (corner game.TileCorner, hit bool) {
+	const maxDist = 40
+	tileX := (x + tileW/4) / (tileW / 2)
+	if abs(x-tileX*tileW/2) > maxDist {
+		return
+	}
+	topH := tileH - tileSlopeHeight
+	tileY := (y - tileSlopeHeight/2 + topH/2) / topH
+	nextScreenY := tileY * topH
+	if (tileX%2 == 0 && tileY%2 == 1) || (tileX%2 == 1 && tileY%2 == 0) {
+		nextScreenY += tileSlopeHeight
+	}
+	if abs(y-nextScreenY) > maxDist {
+		return
+	}
+	return game.TileCorner{tileX, tileY}, true
+}
+
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
 func cornerToScreen(c game.TileCorner) (x, y int) {
 	y = c.Y * (tileH - tileSlopeHeight)
 	if c.X%2 != c.Y%2 {
@@ -42,31 +67,6 @@ func isEdgeGoingDown(e game.TileEdge) bool {
 
 func tileToScreen(p game.TilePosition) (x, y, w, h int) {
 	return p.X * tileW / 2, p.Y * tileYOffset, tileW, tileH
-}
-
-func screenToCorner(x, y int) (corner game.TileCorner, hit bool) {
-	const maxDist = 45
-	tileX := (x + tileW/4) / (tileW / 2)
-	if abs(x-tileX*tileW/2) > maxDist {
-		return
-	}
-	topH := tileH - tileSlopeHeight
-	tileY := (y - tileSlopeHeight/2 + topH/2) / topH
-	nextScreenY := tileY * topH
-	if (tileX%2 == 0 && tileY%2 == 1) || (tileX%2 == 1 && tileY%2 == 0) {
-		nextScreenY += tileSlopeHeight
-	}
-	if abs(y-nextScreenY) > maxDist {
-		return
-	}
-	return game.TileCorner{tileX, tileY}, true
-}
-
-func abs(x int) int {
-	if x < 0 {
-		return -x
-	}
-	return x
 }
 
 func screenToEdge(x, y int) (edge game.TileEdge, hit bool) {

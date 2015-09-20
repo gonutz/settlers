@@ -1,3 +1,5 @@
+// +build ignore
+
 package main
 
 import (
@@ -45,8 +47,6 @@ const (
 var state = buildingRoad
 
 func main() {
-	rand.Seed(time.Now().UnixNano())
-
 	if err := glfw.Init(); err != nil {
 		fmt.Println("glfw.Init():", err)
 		return
@@ -70,10 +70,6 @@ func main() {
 		return
 	}
 
-	var maxTextureSize int32
-	gl.GetIntegerv(gl.MAX_TEXTURE_SIZE, &maxTextureSize)
-	fmt.Println(maxTextureSize)
-
 	stash := fontstash.New(512, 512)
 	fontID, err := stash.AddFont(resourcePath("MorrisRoman-Black.ttf"))
 	if err != nil {
@@ -88,20 +84,8 @@ func main() {
 	gl.MatrixMode(gl.MODELVIEW)
 	gl.LoadIdentity()
 
-	g := game.New([]game.Color{game.Red, game.White, game.Blue}, rand.Int)
-	g.Players[0].Settlements[0].Position = game.TileCorner{5, 2}
-	g.Players[0].Cities[0].Position = game.TileCorner{7, 2}
-	g.Players[0].Roads[0].Position = game.TileEdge{11, 2}
-	g.Players[0].Roads[1].Position = game.TileEdge{13, 2}
-	g.Players[1].Settlements[0].Position = game.TileCorner{5, 4}
-	g.Players[1].Settlements[1].Position = game.TileCorner{7, 4}
-	g.Players[1].Roads[0].Position = game.TileEdge{11, 4}
-	g.Players[1].Roads[1].Position = game.TileEdge{13, 4}
-	g.Players[2].Settlements[0].Position = game.TileCorner{9, 4}
-	g.Players[2].Settlements[1].Position = game.TileCorner{11, 4}
-	g.Players[2].Roads[0].Position = game.TileEdge{19, 4}
-	g.Players[2].Roads[1].Position = game.TileEdge{21, 4}
-	g.Robber.Position = game.TilePosition{7, 2}
+	rand.Seed(time.Now().UnixNano())
+	g := game.New([]game.Color{game.Red, game.White, game.Blue}, rand.Int())
 
 	var lines []string
 	window.SetCharCallback(func(_ *glfw.Window, r rune) {
