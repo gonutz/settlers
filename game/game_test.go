@@ -72,3 +72,19 @@ func TestAdjacentEdgesToEdge(t *testing.T) {
 	edges = AdjacentEdgesToEdge(TileEdge{8, 1})
 	checkEdges(t, edges[:], 7, 1, 7, 2, 9, 1, 9, 2)
 }
+
+func TestAdjacentTilesToEdge(t *testing.T) {
+	checkAdjacentTilesToEdge(t, TileEdge{5, 1}, TilePosition{1, 0}, TilePosition{2, 1})
+	checkAdjacentTilesToEdge(t, TileEdge{7, 2}, TilePosition{2, 1}, TilePosition{3, 2})
+	checkAdjacentTilesToEdge(t, TileEdge{6, 0}, TilePosition{1, 0}, TilePosition{3, 0})
+	checkAdjacentTilesToEdge(t, TileEdge{8, 1}, TilePosition{2, 1}, TilePosition{4, 1})
+	checkAdjacentTilesToEdge(t, TileEdge{5, 2}, TilePosition{1, 2}, TilePosition{2, 1})
+	checkAdjacentTilesToEdge(t, TileEdge{7, 1}, TilePosition{2, 1}, TilePosition{3, 0})
+}
+
+func checkAdjacentTilesToEdge(t *testing.T, edge TileEdge, t1, t2 TilePosition) {
+	tiles := AdjacentTilesToEdge(edge)
+	if tiles[0] != t1 || tiles[1] != t2 {
+		t.Errorf("for edge %v expected %v %v but was %v %v", edge, t1, t2, tiles[0], tiles[1])
+	}
+}

@@ -250,26 +250,43 @@ func glRect(x, y, w, h, r, g, b, a float32) {
 	gl.End()
 }
 
+func (g *graphics) rect(x, y, w, h int, color [4]float32) {
+	glRect(float32(x), float32(y), float32(w), float32(h),
+		color[0], color[1], color[2], color[3])
+}
+
 func (g *graphics) drawSettlementAt(x, y int, color game.Color) {
-	img := g.settlement(color)
+	img := g.glImages["settlement_"+colorToString(color)]
 	img.DrawAtXY(x-img.Width/2, y-img.Height/2)
 }
 
-func (g *graphics) settlement(color game.Color) *glImage {
+func (g *graphics) drawHoveringSettlementAt(x, y int, color game.Color) {
+	img := g.glImages["settlement_"+colorToString(color)]
+	col := playerColor(color)
+	col[3] = 0.6
+	img.DrawColoredAtXY(x-img.Width/2, y-img.Height/2, col)
+}
+
+func colorToString(color game.Color) string {
 	switch color {
 	case game.White:
-		return g.glImages["settlement_white"]
+		return "white"
 	case game.Blue:
-		return g.glImages["settlement_blue"]
+		return "blue"
 	case game.Red:
-		return g.glImages["settlement_red"]
+		return "red"
 	default:
-		return g.glImages["settlement_orange"]
+		return "orange"
 	}
 }
 
-func (g *graphics) drawHoveringSettlementAt(x, y int, color game.Color) {
-	img := g.settlement(color)
+func (g *graphics) drawCityAt(x, y int, color game.Color) {
+	img := g.glImages["city_"+colorToString(color)]
+	img.DrawAtXY(x-img.Width/2, y-img.Height/2)
+}
+
+func (g *graphics) drawHoveringCityAt(x, y int, color game.Color) {
+	img := g.glImages["city_"+colorToString(color)]
 	col := playerColor(color)
 	col[3] = 0.6
 	img.DrawColoredAtXY(x-img.Width/2, y-img.Height/2, col)
@@ -280,10 +297,106 @@ func playerColor(color game.Color) [4]float32 {
 	case game.White:
 		return [4]float32{1, 1, 1, 1}
 	case game.Blue:
-		return [4]float32{0, 0, 1, 1}
+		return [4]float32{0.5, 0.5, 1, 1}
 	case game.Red:
-		return [4]float32{1, 0, 0, 1}
+		return [4]float32{1, 0.5, 0.5, 1}
 	default:
 		return [4]float32{1, 0.5, 0, 1}
 	}
+}
+
+func (g *graphics) drawRoadAt(x, y int, edge game.TileEdge, c game.Color) {
+	img := g.glImages["road_"+colorToString(c)+"_"+roadDirection(edge)]
+	img.DrawAtXY(x-img.Width/2, y-img.Height/2)
+}
+
+func roadDirection(edge game.TileEdge) string {
+	if isEdgeGoingDown(edge) {
+		return "down"
+	}
+	if isEdgeVertical(edge) {
+		return "vertical"
+	}
+	return "up"
+}
+
+func (g *graphics) drawRobber(x, y, w, h int) {
+	img := g.glImages["robber"]
+	img.DrawAtXY(x+(w-img.Width)/2, y+(h-img.Height)/2)
+}
+
+func (g *graphics) drawHoveringRoadAt(x, y int, color game.Color) {
+	img := g.glImages["road_"+colorToString(color)+"_up"]
+	col := playerColor(color)
+	col[3] = 0.6
+	img.DrawColoredAtXY(x-img.Width/2, y-img.Height/2, col)
+}
+
+func (g *graphics) drawResources(resources [game.ResourceCount]int, color [4]float32) {
+	maxWidth, maxHeight := 0, 0
+	var images [game.ResourceCount]*glImage
+	for i := 0; i < game.ResourceCount; i++ {
+		resource := game.Resource(i)
+		images[i] = g.glImages[resourceToString(resource)+"_symbol"]
+		if images[i].Width > maxWidth {
+			maxWidth = images[i].Width
+		}
+		if images[i].Height > maxHeight {
+			maxHeight = images[i].Height
+		}
+	}
+
+	const hMargin = 20
+	overallWidth := game.ResourceCount*maxWidth + (game.ResourceCount-1)*hMargin
+	x, y := (gameW-overallWidth)/2, gameH+30
+	textY := float64(y+maxHeight) + g.font.Size
+	g.font.Color = color
+	const border = 15
+	glRect(
+		float32(x)-border,
+		float32(y)-border,
+		float32(overallWidth)+2*border,
+		float32(textY)-float32(y)+2*border,
+		0.8, 0.6, 0.5, 0.8,
+	)
+	for i := 0; i < game.ResourceCount; i++ {
+		images[i].DrawAtXY(x+(maxWidth-images[i].Width)/2, y)
+		text := strconv.Itoa(resources[i])
+		textW, _ := g.font.TextSize(text)
+		fontX := float64(x + (maxWidth-textW)/2)
+		g.font.Write(text, fontX, textY)
+		x += maxWidth + hMargin
+	}
+}
+
+func resourceToString(r game.Resource) string {
+	switch r {
+	case game.Brick:
+		return "brick"
+	case game.Ore:
+		return "ore"
+	case game.Grain:
+		return "grain"
+	case game.Lumber:
+		return "lumber"
+	case game.Wool:
+		return "wool"
+	default:
+		return "nothing"
+	}
+}
+
+func (g *graphics) drawImageCenteredAt(id string, x, y int) {
+	img := g.glImages[id]
+	img.DrawAtXY(x-img.Width/2, y-img.Height/2)
+}
+
+func (g *graphics) drawColoredImageCenteredAt(id string, x, y int, color [4]float32) {
+	img := g.glImages[id]
+	img.DrawColoredAtXY(x-img.Width/2, y-img.Height/2, color)
+}
+
+func (g *graphics) imageSize(id string) (w, h int) {
+	img := g.glImages[id]
+	return img.Width, img.Height
 }

@@ -7,10 +7,10 @@ import (
 const (
 	leftBorder   = 50
 	rightBorder  = 50
-	bottomBorder = 100
+	bottomBorder = 150
 	topBorder    = 100
-	gameW        = 7.0 * 200
-	gameH        = 7.0*tileYOffset + tileSlopeHeight
+	gameW        = 7 * 200
+	gameH        = 7*tileYOffset + tileSlopeHeight
 )
 
 func newCamera() *camera { return &camera{} }

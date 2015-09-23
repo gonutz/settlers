@@ -1,7 +1,5 @@
 package game
 
-import "errors"
-
 // Tiles: 5 resources: brick, lumber, wool, grain, ore
 // or water: nothing, 5 2:1 harbors, 3:1 harbors
 // or desert.
@@ -21,10 +19,6 @@ type Game struct {
 	Robber           Robber
 	DevelopmentCards [25]DevelopmentCard
 	CardsDealt       int
-	// LongestRoad and LargestArmy give the index of the player currently
-	// holding the achievement or -1 if it is not yet accomplished by anybody.
-	LongestRoad int
-	LargestArmy int
 	// seed is for random number generation
 	rand *randomNumberGenerator
 }
@@ -36,7 +30,10 @@ const (
 	BuildingFirstRoad
 	BuildingSecondSettlement
 	BuildingSecondRoad
-	FirstPhaseIsOver
+	ChoosingNextAction
+	BuildingNewRoad
+	BuildingNewSettlement
+	BuildingNewCity
 )
 
 type Tile struct {
@@ -143,12 +140,15 @@ const (
 	BottomRight
 )
 
+// TODO cards
 type Player struct {
-	Color       Color
-	Roads       [15]Road
-	Settlements [5]Settlement
-	Cities      [4]City
-	Resources   [ResourceCount]int // TODO or just five int fields?
+	Color          Color
+	Roads          [15]Road
+	Settlements    [5]Settlement
+	Cities         [4]City
+	Resources      [ResourceCount]int
+	HasLongestRoad bool
+	HasLargestArmy bool
 }
 
 type Color int
@@ -169,11 +169,11 @@ type Road struct{ Position TileEdge }
 type Resource int
 
 const (
-	Brick Resource = iota
+	Lumber Resource = iota
+	Brick
 	Wool
 	Ore
 	Grain
-	Lumber
 	Nothing // NOTE this has to come last
 )
 const ResourceCount = 5
@@ -184,9 +184,6 @@ type Robber struct {
 
 type DevelopmentCard struct {
 	Kind DevelopmentCardKind
-	// Owner is the player index for who owns this card
-	// NOTE this is 0 by default, even when the card was not dealt yet
-	Owner int
 }
 
 type DevelopmentCardKind int
@@ -304,6 +301,15 @@ func New(colors []Color, randomSeed int) *Game {
 	game.Tiles[31] = rand(terrains)
 
 	// set tile positions
+	var tilePositions = []TilePosition{
+		{3, 0}, {5, 0}, {7, 0}, {9, 0},
+		{2, 1}, {4, 1}, {6, 1}, {8, 1}, {10, 1},
+		{1, 2}, {3, 2}, {5, 2}, {7, 2}, {9, 2}, {11, 2},
+		{0, 3}, {2, 3}, {4, 3}, {6, 3}, {8, 3}, {10, 3}, {12, 3},
+		{1, 4}, {3, 4}, {5, 4}, {7, 4}, {9, 4}, {11, 4},
+		{2, 5}, {4, 5}, {6, 5}, {8, 5}, {10, 5},
+		{3, 6}, {5, 6}, {7, 6}, {9, 6},
+	}
 	for i := range game.Tiles {
 		game.Tiles[i].Position = tilePositions[i]
 	}
@@ -347,14 +353,26 @@ func New(colors []Color, randomSeed int) *Game {
 	}
 	cards = append(cards, knights[:]...)
 
-	game.LongestRoad = -1
-	game.LargestArmy = -1
+	game.randomizePlayerOrder()
 
 	return &game
 }
 
+func (g *Game) randomizePlayerOrder() {
+	players := g.GetPlayers()
+	var order []Player
+	for len(players) > 0 {
+		index := g.rand.next() % len(players)
+		order = append(order, players[index])
+		players = append(players[:index], players[index+1:]...)
+	}
+	for i, p := range order {
+		g.Players[i] = p
+	}
+}
+
 // TODO create a way to get to the information who received what resources
-// this is necessary to animate the cards flying to the players
+// this is necessary to e.g. animate the resources flying to the players
 func (g *Game) DealResources(dice int) {
 	for _, tile := range g.Tiles {
 		if tile.Number == dice && g.Robber.Position != tile.Position {
@@ -410,42 +428,71 @@ func (g *Game) RemainingSettlements() int {
 	return len(p.Settlements) - len(p.GetBuiltSettlements())
 }
 
+func (g *Game) RemainingCities() int {
+	p := g.GetCurrentPlayer()
+	return len(p.Cities) - len(p.GetBuiltCities())
+}
+
 func (g *Game) CanPlayerBuildCity() bool {
 	return !g.Players[g.CurrentPlayer].Cities[3].isSet()
 }
 
-func (g *Game) CanPlayerBuildRoad() bool {
-	return !g.Players[g.CurrentPlayer].Roads[14].isSet()
-}
+// BuiltCity assumes that you checked CanBuildCityAt right before calling it.
+func (g *Game) BuildCity(c TileCorner) {
+	player := g.currentPlayerPointer()
 
-func (g *Game) BuildCity(p point) {
-	player := &g.Players[g.CurrentPlayer]
+	// un-build the settlement that is to be replaced with a city
+	settlementIndex := -1
+	for i, s := range player.GetBuiltSettlements() {
+		if s.Position == c {
+			settlementIndex = i
+			break
+		}
+	}
+	lastIndex := len(player.Settlements) - 1
+	for i := settlementIndex; i < lastIndex; i++ {
+		player.Settlements[i].Position = player.Settlements[i+1].Position
+	}
+	player.Settlements[lastIndex].Position = TileCorner{}
+
+	// now build the city
 	for i := range player.Cities {
 		if !player.Cities[i].isSet() {
-			player.Cities[i].Position = TileCorner(p)
-			return
+			player.Cities[i].Position = TileCorner(c)
+			break
 		}
 	}
+
+	g.State = ChoosingNextAction
 }
 
-func (g *Game) BuildRoad(p point) {
-	player := &g.Players[g.CurrentPlayer]
+// BuildRoad assumes that you check CanBuildRoadAt first.
+func (g *Game) BuildRoad(e TileEdge) {
+	player := g.currentPlayerPointer()
 	for i := range player.Roads {
 		if !player.Roads[i].isSet() {
-			player.Roads[i].Position = TileEdge(p)
-			return
+			player.Roads[i].Position = TileEdge(e)
+			break
 		}
 	}
-}
-
-var tilePositions = []TilePosition{
-	{3, 0}, {5, 0}, {7, 0}, {9, 0},
-	{2, 1}, {4, 1}, {6, 1}, {8, 1}, {10, 1},
-	{1, 2}, {3, 2}, {5, 2}, {7, 2}, {9, 2}, {11, 2},
-	{0, 3}, {2, 3}, {4, 3}, {6, 3}, {8, 3}, {10, 3}, {12, 3},
-	{1, 4}, {3, 4}, {5, 4}, {7, 4}, {9, 4}, {11, 4},
-	{2, 5}, {4, 5}, {6, 5}, {8, 5}, {10, 5},
-	{3, 6}, {5, 6}, {7, 6}, {9, 6},
+	if g.State == BuildingFirstRoad {
+		g.State = BuildingFirstSettlement
+		g.CurrentPlayer++
+		if g.CurrentPlayer == g.PlayerCount {
+			g.State = BuildingSecondSettlement
+			g.CurrentPlayer--
+		}
+	} else if g.State == BuildingSecondRoad {
+		g.State = BuildingSecondSettlement
+		g.CurrentPlayer--
+		if g.CurrentPlayer == -1 {
+			g.State = ChoosingNextAction
+			g.randomizePlayerOrder()
+			g.CurrentPlayer = 0
+		}
+	} else if g.State == BuildingNewRoad {
+		g.State = ChoosingNextAction
+	}
 }
 
 func (g *Game) Size() (w, h int) { return 13, 7 }
@@ -531,18 +578,18 @@ func AdjacentTilesToEdge(p TileEdge) [2]TilePosition {
 			{p.X / 2, p.Y},
 		}
 	}
-	// now it's either rising or falling edge
-	if (p.Y%2 == 0 && (p.X-1)%4 == 0) || (p.Y%2 == 1 && (p.X-3)%4 == 0) {
-		// falling edge
+
+	if (p.Y%2 == 0 && (p.X-3)%4 == 0) ||
+		(p.Y%2 == 1 && (p.X-1)%4 == 0) {
 		return [2]TilePosition{
-			{p.X / 4 * 2, p.Y},
-			{p.X/4*2 + 1, p.Y - 1},
+			{p.X/2 - 1, p.Y - 1},
+			{p.X / 2, p.Y},
 		}
 	}
-	// rising edge
+
 	return [2]TilePosition{
-		{p.X/4*2 - 1, p.Y - 1},
-		{p.X / 4 * 2, p.Y},
+		{p.X/2 - 1, p.Y},
+		{p.X / 2, p.Y - 1},
 	}
 }
 
@@ -647,28 +694,56 @@ func (g *Game) GetTileAt(p TilePosition) (Tile, bool) {
 	return Tile{}, false
 }
 
-func (g *Game) BuildSettlement(c TileCorner) error {
-	if !g.CanBuildSettlementAt(c) {
-		return IllegalMove
-	}
-
-	player := &g.Players[g.CurrentPlayer]
+// BuildSettlement assumes that CanBuildSettlement returned true right before
+// you call this
+func (g *Game) BuildSettlement(c TileCorner) {
+	player := g.currentPlayerPointer()
 	for i := range player.Settlements {
 		if !player.Settlements[i].isSet() {
 			player.Settlements[i].Position = c
-			return nil
+			break
 		}
 	}
-	return IllegalMove
-}
 
-var IllegalMove = errors.New("illegal move")
+	if g.State == BuildingFirstSettlement {
+		g.State = BuildingFirstRoad
+	} else if g.State == BuildingSecondSettlement {
+		// TODO make dealt resources available to the UI
+		player := g.currentPlayerPointer()
+		// deal resources for this settlement
+		tilePositions := AdjacentTilesToCorner(c)
+		for _, tilePosition := range tilePositions {
+			tile, valid := g.GetTileAt(tilePosition)
+			if valid {
+				if resource := tile.Resource(); resource != Nothing {
+					player.Resources[resource]++
+				}
+			}
+		}
+		g.State = BuildingSecondRoad
+	} else if g.State == BuildingNewSettlement {
+		g.State = ChoosingNextAction
+	}
+}
 
 func (g *Game) CanBuildSettlementAt(c TileCorner) bool {
 	if g.RemainingSettlements() == 0 {
 		return false
 	}
 
+	if !g.canBuildBuildingAt(c) {
+		return false
+	}
+
+	// if we are in the first phase, this is all we need to know to build
+	if g.State == BuildingFirstSettlement || g.State == BuildingSecondSettlement {
+		return true
+	}
+
+	return g.hasRoadToCorner(c)
+}
+
+func (g *Game) canBuildBuildingAt(c TileCorner) bool {
 	// check that at least one adjacent tile is not water, can't build in water!
 	tilePositions := AdjacentTilesToCorner(c)
 	atLeastOneTileIsLand := false
@@ -684,10 +759,9 @@ func (g *Game) CanBuildSettlementAt(c TileCorner) bool {
 
 	// check that all adjacent corners have no building on them
 	cornerPositions := AdjacentCornersToCorner(c)
-
 	for _, player := range g.GetPlayers() {
 		if player.HasBuildingOnCorner(c) {
-			// if there is a building on that corner
+			// if there is a building on this corner
 			return false
 		}
 		// or if there is a building only one corner away
@@ -698,23 +772,32 @@ func (g *Game) CanBuildSettlementAt(c TileCorner) bool {
 		}
 	}
 
-	// if we are in the first phase, this is all we need to know to build
-	if g.State == BuildingFirstSettlement || g.State == BuildingSecondSettlement {
-		return true
-	}
-
-	if !g.isFirstGamePhase() {
-		hasRoadToCorner := false
-		edgePositions := AdjacentEdgesToCorner(c)
-		for _, edge := range edgePositions {
-			if g.GetCurrentPlayer().HasRoadOnEdge(edge) {
-				hasRoadToCorner = true
-			}
-		}
-		return hasRoadToCorner
-	}
-
 	return true
+}
+
+func (g *Game) CanBuildCityAt(c TileCorner) bool {
+	if g.RemainingCities() == 0 {
+		return false
+	}
+
+	player := g.currentPlayerPointer()
+	for _, s := range player.GetBuiltSettlements() {
+		if s.Position == c {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (g *Game) hasRoadToCorner(c TileCorner) bool {
+	edgePositions := AdjacentEdgesToCorner(c)
+	for _, edge := range edgePositions {
+		if g.GetCurrentPlayer().HasRoadOnEdge(edge) {
+			return true
+		}
+	}
+	return false
 }
 
 func (p Player) HasBuildingOnCorner(corner TileCorner) bool {
@@ -735,6 +818,7 @@ func (g *Game) GetCurrentPlayer() Player {
 	return g.Players[g.CurrentPlayer]
 }
 
+// TODO this function is not necessary anymore, now there is State
 func (g *Game) isFirstGamePhase() bool {
 	// make sure there are no cities and each player has AT MOST 2 roads and 2
 	// settlements
@@ -765,6 +849,10 @@ func (p Player) HasRoadOnEdge(edge TileEdge) bool {
 }
 
 func (g *Game) CanBuildRoadAt(edge TileEdge) bool {
+	if g.RemainingRoads() == 0 {
+		return false
+	}
+
 	// can't build here if there already is a road on this edge
 	for _, p := range g.GetPlayers() {
 		if p.HasRoadOnEdge(edge) {
@@ -772,7 +860,17 @@ func (g *Game) CanBuildRoadAt(edge TileEdge) bool {
 		}
 	}
 
-	// can build if there is a building on an adjacent corner
+	// can only build if at least one adjacent tile is land
+	tiles := AdjacentTilesToEdge(edge)
+	if !(g.isLand(tiles[0]) || g.isLand(tiles[1])) {
+		println("no land in sight")
+		println("edge", edge.X, edge.Y)
+		println("tiles[0]", tiles[0].X, tiles[0].Y)
+		println("tiles[1]", tiles[1].X, tiles[1].Y)
+		return false
+	}
+
+	// find a building of the current player next to the road
 	hasBuildingNextToIt := false
 	var buildingCorner TileCorner
 	for _, corner := range AdjacentCornersToEdge(edge) {
@@ -782,8 +880,9 @@ func (g *Game) CanBuildRoadAt(edge TileEdge) bool {
 			break
 		}
 	}
+	println("hasBuildingNextToIt", hasBuildingNextToIt)
 
-	if g.isFirstGamePhase() {
+	if g.State == BuildingFirstRoad || g.State == BuildingSecondRoad {
 		if !hasBuildingNextToIt {
 			return false
 		}
@@ -793,7 +892,7 @@ func (g *Game) CanBuildRoadAt(edge TileEdge) bool {
 		// one. The new one is that without any adjacent roads so if this
 		// settlement already has a road next to it we return false, the player
 		// has to build adjacent to the other settlement.
-		if len(g.GetCurrentPlayer().GetBuiltSettlements()) == 2 {
+		if g.State == BuildingSecondRoad {
 			for _, edge := range AdjacentEdgesToCorner(buildingCorner) {
 				if g.GetCurrentPlayer().HasRoadOnEdge(edge) {
 					return false
@@ -805,7 +904,7 @@ func (g *Game) CanBuildRoadAt(edge TileEdge) bool {
 		if hasBuildingNextToIt {
 			return true
 		}
-		// can build if there is a road adjacent to the edge
+		// can also build if there is a road adjacent to the edge
 		for _, e := range AdjacentEdgesToEdge(edge) {
 			if g.GetCurrentPlayer().HasRoadOnEdge(e) {
 				return true
@@ -813,4 +912,105 @@ func (g *Game) CanBuildRoadAt(edge TileEdge) bool {
 		}
 		return false
 	}
+}
+
+func (g *Game) RemainingRoads() int {
+	p := g.GetCurrentPlayer()
+	return len(p.Roads) - len(p.GetBuiltRoads())
+}
+
+func (g *Game) isLand(p TilePosition) bool {
+	tile, valid := g.GetTileAt(p)
+	return valid && tile.Terrain != Water
+}
+
+func (g *Game) CanBuyRoad() bool {
+	player := g.currentPlayerPointer()
+	hasOneLeft := !player.Roads[len(player.Roads)-1].isSet()
+
+	return hasOneLeft &&
+		player.Resources[Lumber] >= 1 &&
+		player.Resources[Brick] >= 1
+}
+
+func (g *Game) BuyRoad() {
+	player := g.currentPlayerPointer()
+	player.Resources[Lumber]--
+	player.Resources[Brick]--
+	g.State = BuildingNewRoad
+}
+
+func (g *Game) CanBuySettlement() bool {
+	player := g.currentPlayerPointer()
+	hasOneLeft := !player.Settlements[len(player.Settlements)-1].isSet()
+
+	return hasOneLeft &&
+		g.canBuildAtAnyRoad(player) &&
+		player.Resources[Lumber] >= 1 &&
+		player.Resources[Brick] >= 1 &&
+		player.Resources[Wool] >= 1 &&
+		player.Resources[Grain] >= 1
+}
+
+func (g *Game) canBuildAtAnyRoad(player *Player) bool {
+	for _, road := range player.GetBuiltRoads() {
+		corners := AdjacentCornersToEdge(road.Position)
+		for _, corner := range corners {
+			if g.CanBuildSettlementAt(corner) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (g *Game) BuySettlement() {
+	player := g.currentPlayerPointer()
+	player.Resources[Lumber]--
+	player.Resources[Brick]--
+	player.Resources[Wool]--
+	player.Resources[Grain]--
+	g.State = BuildingNewSettlement
+}
+
+func (g *Game) CanBuyCity() bool {
+	player := g.currentPlayerPointer()
+	hasOneLeft := !player.Cities[len(player.Cities)-1].isSet()
+
+	return hasOneLeft &&
+		player.Resources[Grain] >= 2 &&
+		player.Resources[Ore] >= 3 &&
+		len(player.GetBuiltSettlements()) > 0
+}
+
+func (g *Game) BuyCity() {
+	player := g.currentPlayerPointer()
+	player.Resources[Grain] -= 2
+	player.Resources[Ore] -= 3
+	g.State = BuildingNewCity
+}
+
+func (g *Game) CanBuyDevelopmentCard() bool {
+	player := g.currentPlayerPointer()
+	return g.CardsDealt < len(g.DevelopmentCards) &&
+		player.Resources[Wool] >= 1 &&
+		player.Resources[Grain] >= 1 &&
+		player.Resources[Ore] >= 1
+}
+
+func (g *Game) BuyDevelopmentCard() {
+	player := g.currentPlayerPointer()
+	player.Resources[Wool]--
+	player.Resources[Grain]--
+	player.Resources[Ore]--
+
+	// TODO deal card
+	_ = g.DevelopmentCards[g.CardsDealt]
+	g.CardsDealt++
+
+	g.State = ChoosingNextAction
+}
+
+func (g *Game) currentPlayerPointer() *Player {
+	return &g.Players[g.CurrentPlayer]
 }
