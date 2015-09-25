@@ -74,7 +74,7 @@ func (w uiWindow) Close() {
 var ui *gameUI
 
 func keyCallback(_ *glfw.Window, key glfw.Key, _ int, action glfw.Action, _ glfw.ModifierKey) {
-	if action == glfw.Press {
+	if action == glfw.Press || action == glfw.Repeat {
 		ui.KeyDown(key)
 	}
 }

@@ -256,12 +256,12 @@ func (g *graphics) rect(x, y, w, h int, color [4]float32) {
 }
 
 func (g *graphics) drawSettlementAt(x, y int, color game.Color) {
-	img := g.glImages["settlement_"+colorToString(color)]
+	img := g.getGLImage("settlement_" + colorToString(color))
 	img.DrawAtXY(x-img.Width/2, y-img.Height/2)
 }
 
 func (g *graphics) drawHoveringSettlementAt(x, y int, color game.Color) {
-	img := g.glImages["settlement_"+colorToString(color)]
+	img := g.getGLImage("settlement_" + colorToString(color))
 	col := playerColor(color)
 	col[3] = 0.6
 	img.DrawColoredAtXY(x-img.Width/2, y-img.Height/2, col)
@@ -281,12 +281,12 @@ func colorToString(color game.Color) string {
 }
 
 func (g *graphics) drawCityAt(x, y int, color game.Color) {
-	img := g.glImages["city_"+colorToString(color)]
+	img := g.getGLImage("city_" + colorToString(color))
 	img.DrawAtXY(x-img.Width/2, y-img.Height/2)
 }
 
 func (g *graphics) drawHoveringCityAt(x, y int, color game.Color) {
-	img := g.glImages["city_"+colorToString(color)]
+	img := g.getGLImage("city_" + colorToString(color))
 	col := playerColor(color)
 	col[3] = 0.6
 	img.DrawColoredAtXY(x-img.Width/2, y-img.Height/2, col)
@@ -306,7 +306,7 @@ func playerColor(color game.Color) [4]float32 {
 }
 
 func (g *graphics) drawRoadAt(x, y int, edge game.TileEdge, c game.Color) {
-	img := g.glImages["road_"+colorToString(c)+"_"+roadDirection(edge)]
+	img := g.getGLImage("road_" + colorToString(c) + "_" + roadDirection(edge))
 	img.DrawAtXY(x-img.Width/2, y-img.Height/2)
 }
 
@@ -321,12 +321,12 @@ func roadDirection(edge game.TileEdge) string {
 }
 
 func (g *graphics) drawRobber(x, y, w, h int) {
-	img := g.glImages["robber"]
+	img := g.getGLImage("robber")
 	img.DrawAtXY(x+(w-img.Width)/2, y+(h-img.Height)/2)
 }
 
 func (g *graphics) drawHoveringRoadAt(x, y int, color game.Color) {
-	img := g.glImages["road_"+colorToString(color)+"_up"]
+	img := g.getGLImage("road_" + colorToString(color) + "_up")
 	col := playerColor(color)
 	col[3] = 0.6
 	img.DrawColoredAtXY(x-img.Width/2, y-img.Height/2, col)
@@ -337,7 +337,7 @@ func (g *graphics) drawResources(resources [game.ResourceCount]int, color [4]flo
 	var images [game.ResourceCount]*glImage
 	for i := 0; i < game.ResourceCount; i++ {
 		resource := game.Resource(i)
-		images[i] = g.glImages[resourceToString(resource)+"_symbol"]
+		images[i] = g.getGLImage(resourceToString(resource) + "_symbol")
 		if images[i].Width > maxWidth {
 			maxWidth = images[i].Width
 		}
@@ -387,16 +387,39 @@ func resourceToString(r game.Resource) string {
 }
 
 func (g *graphics) drawImageCenteredAt(id string, x, y int) {
-	img := g.glImages[id]
+	img := g.getGLImage(id)
 	img.DrawAtXY(x-img.Width/2, y-img.Height/2)
 }
 
+func (g *graphics) getGLImage(id string) *glImage {
+	if img, ok := g.glImages[id]; ok {
+		return img
+	}
+	panic("illegal image ID: '" + id + "'")
+}
+
 func (g *graphics) drawColoredImageCenteredAt(id string, x, y int, color [4]float32) {
-	img := g.glImages[id]
+	img := g.getGLImage(id)
 	img.DrawColoredAtXY(x-img.Width/2, y-img.Height/2, color)
 }
 
 func (g *graphics) imageSize(id string) (w, h int) {
-	img := g.glImages[id]
+	img := g.getGLImage(id)
 	return img.Width, img.Height
+}
+
+func (g *graphics) drawDice(dice [2]int) {
+	x, y := 60, 100
+	ids := []string{"", "die_1", "die_2", "die_3", "die_4", "die_5", "die_6"}
+	g.drawImageCenteredAt(ids[dice[0]], x, y)
+	g.drawImageCenteredAt(ids[dice[1]], x+100, y)
+}
+
+func (g *graphics) writeTextLineCenteredInRect(text string, r rect, color [4]float32) {
+	g.font.Color = color
+	w, h := g.font.TextSize(text)
+	x := float64(r.x) + float64(r.w-w)/2
+	y := float64(r.y) + float64(r.h+h)/2
+	g.font.Write(text, x, y)
+	g.fontStash.FlushDraw()
 }

@@ -19,6 +19,7 @@ type Game struct {
 	Robber           Robber
 	DevelopmentCards [25]DevelopmentCard
 	CardsDealt       int
+	Dice             [2]int
 	// seed is for random number generation
 	rand *randomNumberGenerator
 }
@@ -26,7 +27,8 @@ type Game struct {
 type State int
 
 const (
-	BuildingFirstSettlement State = iota
+	NotStarted State = iota
+	BuildingFirstSettlement
 	BuildingFirstRoad
 	BuildingSecondSettlement
 	BuildingSecondRoad
@@ -34,6 +36,7 @@ const (
 	BuildingNewRoad
 	BuildingNewSettlement
 	BuildingNewCity
+	RollingDice
 )
 
 type Tile struct {
@@ -198,8 +201,6 @@ const (
 
 func New(colors []Color, randomSeed int) *Game {
 	var game Game
-
-	game.State = BuildingFirstSettlement
 	game.rand = newRNG(randomSeed)
 
 	rand := func(tiles *[]Tile) Tile {
@@ -354,8 +355,15 @@ func New(colors []Color, randomSeed int) *Game {
 	cards = append(cards, knights[:]...)
 
 	game.randomizePlayerOrder()
+	game.State = NotStarted
 
 	return &game
+}
+
+func (g *Game) Start() {
+	if g.State == NotStarted {
+		g.State = BuildingFirstSettlement
+	}
 }
 
 func (g *Game) randomizePlayerOrder() {
@@ -486,7 +494,7 @@ func (g *Game) BuildRoad(e TileEdge) {
 		g.State = BuildingSecondSettlement
 		g.CurrentPlayer--
 		if g.CurrentPlayer == -1 {
-			g.State = ChoosingNextAction
+			g.State = RollingDice
 			g.randomizePlayerOrder()
 			g.CurrentPlayer = 0
 		}
@@ -505,6 +513,7 @@ type building interface {
 
 func (g *Game) NextTurn() {
 	g.CurrentPlayer = (g.CurrentPlayer + 1) % g.PlayerCount
+	g.State = RollingDice
 }
 
 // IsSet returns true if the settlement is currently placed on the game field.
@@ -863,10 +872,6 @@ func (g *Game) CanBuildRoadAt(edge TileEdge) bool {
 	// can only build if at least one adjacent tile is land
 	tiles := AdjacentTilesToEdge(edge)
 	if !(g.isLand(tiles[0]) || g.isLand(tiles[1])) {
-		println("no land in sight")
-		println("edge", edge.X, edge.Y)
-		println("tiles[0]", tiles[0].X, tiles[0].Y)
-		println("tiles[1]", tiles[1].X, tiles[1].Y)
 		return false
 	}
 
@@ -880,7 +885,6 @@ func (g *Game) CanBuildRoadAt(edge TileEdge) bool {
 			break
 		}
 	}
-	println("hasBuildingNextToIt", hasBuildingNextToIt)
 
 	if g.State == BuildingFirstRoad || g.State == BuildingSecondRoad {
 		if !hasBuildingNextToIt {
@@ -1013,4 +1017,11 @@ func (g *Game) BuyDevelopmentCard() {
 
 func (g *Game) currentPlayerPointer() *Player {
 	return &g.Players[g.CurrentPlayer]
+}
+
+func (g *Game) RollTheDice() {
+	g.Dice[0] = 1 + g.rand.next()%6
+	g.Dice[1] = 1 + g.rand.next()%6
+	g.DealResources(g.Dice[0] + g.Dice[1])
+	g.State = ChoosingNextAction
 }
