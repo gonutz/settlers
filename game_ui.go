@@ -4,6 +4,7 @@ import (
 	"github.com/go-gl/gl/v2.1/gl"
 	"github.com/go-gl/glfw/v3.1/glfw"
 	"github.com/gonutz/settlers/game"
+	"github.com/gonutz/settlers/lang"
 	"math/rand"
 	"time"
 )
@@ -11,7 +12,10 @@ import (
 const (
 	NewGameOption = iota
 	JoinRemoteGameOption
+	ChooseLanguageOption
 	QuitOption
+	LanguageOKOption
+	LanguageOptionOffset = 1000
 )
 
 func init() {
@@ -24,6 +28,21 @@ func NewGameUI(window Window) (*gameUI, error) {
 		return nil, err
 	}
 	g := game.New([]game.Color{game.Red, game.Blue, game.White}, 1)
+	newGame := newButton("", rect{450, 400, 500, 80}, NewGameOption)
+	joinRemoteGame := newButton("", rect{450, 500, 500, 80}, JoinRemoteGameOption)
+	chooseLanguage := newButton("", rect{450, 600, 500, 80}, ChooseLanguageOption)
+	quit := newButton("", rect{450, 700, 500, 80}, QuitOption)
+	var langCheckBoxes []*checkBox
+	for language := lang.Language(0); language < lang.LanguageCount; language++ {
+		langCheckBoxes = append(langCheckBoxes,
+			newCheckBox(
+				lang.GetLanguageName(language),
+				rect{550, 400 + 100*int(language), 300, 80},
+				graphics.font,
+				LanguageOptionOffset+int(language),
+			),
+		)
+	}
 	ui := &gameUI{
 		game:     g,
 		window:   window,
@@ -31,43 +50,72 @@ func NewGameUI(window Window) (*gameUI, error) {
 		graphics: graphics,
 		buyMenu:  newBuyMenu(graphics, g),
 		mainMenu: newMenu(
-			50,
-			newButton("New Game", rect{500, 400, 450, 80}, NewGameOption),
-			newButton("Join Remote Game", rect{500, 500, 450, 80}, JoinRemoteGameOption),
-			newButton("Quit", rect{500, 600, 450, 80}, QuitOption),
-			newTextField(rect{500, 700, 450, 80}, graphics.font, -1),
+			newGame,
+			joinRemoteGame,
+			chooseLanguage,
+			quit,
 		),
 		joinGameMenu: newMenu(
-			50,
 			newButton("Yes", rect{500, 400, 450, 80}, -1),
 			newButton("OK", rect{500, 500, 450, 80}, -1),
 			newButton("Well...", rect{500, 600, 450, 80}, -1),
 		),
+		languageMenu: newMenu(
+			newCheckBoxGroup(langCheckBoxes...),
+			newButton(
+				"OK",
+				rect{
+					langCheckBoxes[0].x,
+					langCheckBoxes[len(langCheckBoxes)-1].y + 100,
+					langCheckBoxes[0].w,
+					langCheckBoxes[0].h},
+				LanguageOKOption),
+		),
+		newGameButton:        newGame,
+		joinRemoteGameButton: joinRemoteGame,
+		chooseLanguageButton: chooseLanguage,
+		quitButton:           quit,
 	}
 	ui.mainMenu.show()
-	ui.menus = []*menu{ui.mainMenu, ui.joinGameMenu}
+	ui.menus = []*menu{ui.mainMenu, ui.joinGameMenu, ui.languageMenu}
 	if err := ui.init(); err != nil {
 		return nil, err
 	}
+	ui.setLanguage(lang.English)
 	//ui.DEBUG_initGame()
 	return ui, nil
 }
 
 type gameUI struct {
-	game           *game.Game
-	window         Window
-	camera         *camera
-	graphics       *graphics
-	mouseX, mouseY float64
-	buyMenu        *buyMenu
-	menus          []*menu
-	mainMenu       *menu
-	joinGameMenu   *menu
-	quitting       bool
+	game                 *game.Game
+	window               Window
+	camera               *camera
+	graphics             *graphics
+	mouseX, mouseY       float64
+	buyMenu              *buyMenu
+	menus                []*menu
+	mainMenu             *menu
+	joinGameMenu         *menu
+	languageMenu         *menu
+	quitting             bool
+	newGameButton        *button
+	joinRemoteGameButton *button
+	chooseLanguageButton *button
+	quitButton           *button
 }
 
 type Window interface {
 	Close()
+	SetTitle(title string)
+}
+
+func (ui *gameUI) setLanguage(id lang.Language) {
+	lang.CurrentLanguage = id
+	ui.window.SetTitle(lang.Get(lang.Title))
+	ui.newGameButton.text = lang.Get(lang.NewGame)
+	ui.joinRemoteGameButton.text = lang.Get(lang.JoinRemoteGame)
+	ui.chooseLanguageButton.text = lang.Get(lang.LanguageWord)
+	ui.quitButton.text = lang.Get(lang.Quit)
 }
 
 func (ui *gameUI) init() error {
@@ -112,8 +160,18 @@ func (ui *gameUI) MouseButtonDown(button glfw.MouseButton) {
 				case JoinRemoteGameOption:
 					ui.mainMenu.hide()
 					ui.joinGameMenu.show()
+				case ChooseLanguageOption:
+					ui.mainMenu.hide()
+					ui.languageMenu.show()
 				case QuitOption:
 					ui.window.Close()
+				case LanguageOKOption:
+					ui.mainMenu.show()
+					ui.languageMenu.hide()
+				}
+				if action >= LanguageOptionOffset {
+					language := lang.Language(action - LanguageOptionOffset)
+					ui.setLanguage(language)
 				}
 				return // ignore other event handling if any button was pressed
 			}
@@ -236,7 +294,7 @@ func (ui *gameUI) Draw() {
 func (ui *gameUI) stateInstruction() string {
 	switch ui.game.State {
 	case game.NotStarted:
-		return "Menu"
+		return lang.Get(lang.Menu)
 	case game.BuildingFirstSettlement:
 		return "Build your first Settlement"
 	case game.BuildingFirstRoad:

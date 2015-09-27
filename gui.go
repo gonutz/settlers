@@ -4,7 +4,8 @@ import "github.com/go-gl/glfw/v3.1/glfw"
 
 // newMenu creates a hidden menu, only when you first call show will it be
 // visible.
-func newMenu(margin int, elements ...guiElement) *menu {
+func newMenu(elements ...guiElement) *menu {
+	const margin = 50
 	m := &menu{elements: elements, visible: false}
 	l, r, t, b := 0, 0, 0, 0
 	if len(elements) > 0 {
@@ -100,6 +101,16 @@ func (m *menu) keyPressed(key glfw.Key) {
 func (m *menu) hide() { m.visible = false }
 func (m *menu) show() { m.visible = true }
 
+// some constants that are equal for all menu elements
+
+var (
+	menuColdBackColor      = [4]float32{0.8, 0, 0, 0.7}
+	menuHotBackColor       = [4]float32{0.8, 0, 0, 1}
+	menuFontColor          = [4]float32{1, 1, 1, 1}
+	checkBoxCheckedColor   = [4]float32{0.5, 1, 0.5, 1}
+	checkBoxUncheckedColor = [4]float32{1, 0.5, 0.5, 1}
+)
+
 // button
 
 func newButton(text string, bounds rect, actionID int) *button {
@@ -120,12 +131,12 @@ type button struct {
 func (b *button) bounds() rect { return b.rect }
 
 func (b *button) draw(g *graphics) {
-	color := [4]float32{0.8, 0, 0, 0.7}
+	color := menuColdBackColor
 	if b.hot {
-		color[3] = 1
+		color = menuHotBackColor
 	}
 	g.rect(b.x, b.y, b.w, b.h, color)
-	g.writeTextLineCenteredInRect(b.text, b.rect, [4]float32{1, 1, 1, 1})
+	g.writeTextLineCenteredInRect(b.text, b.rect, menuFontColor)
 }
 
 func (b *button) mouseMovedTo(x, y int) {
@@ -144,10 +155,9 @@ func (b *button) keyPressed(key glfw.Key) {}
 
 // text field
 
-func newTextField(bounds rect, font textSizer, id int) *textBox {
+func newTextField(bounds rect, font textSizer) *textBox {
 	return &textBox{
 		rect: bounds,
-		id:   id,
 		font: font,
 	}
 }
@@ -158,7 +168,6 @@ type textSizer interface {
 
 type textBox struct {
 	rect
-	id         int
 	hot        bool
 	text       string
 	textLength int
@@ -169,17 +178,16 @@ func (t *textBox) bounds() rect { return t.rect }
 
 func (t *textBox) click(x, y int) int {
 	t.hot = t.contains(x, y)
-	println(t.hot)
 	return -1
 }
 
 func (t *textBox) draw(g *graphics) {
-	color := [4]float32{0.8, 0, 0, 0.7}
+	color := menuColdBackColor
 	if t.hot {
-		color[3] = 1
+		color = menuHotBackColor
 	}
 	g.rect(t.x, t.y, t.w, t.h, color)
-	g.writeTextLineCenteredInRect(t.text, t.rect, [4]float32{1, 1, 1, 1})
+	g.writeTextLineCenteredInRect(t.text, t.rect, menuFontColor)
 }
 
 func (t *textBox) mouseMovedTo(x, y int) {}
@@ -205,5 +213,152 @@ func (t *textBox) keyPressed(key glfw.Key) {
 			t.text = t.text[:last]
 			t.textLength--
 		}
+	}
+}
+
+// check box
+
+func newCheckBox(text string, bounds rect, font textSizer, id int) *checkBox {
+	const margin = 10
+	size := bounds.h - 2*margin
+	checkRect := rect{bounds.x + margin, bounds.y + margin, size, size}
+	textW, textH := font.TextSize(text)
+	textRect := rect{
+		checkRect.x + checkRect.w + 3*margin,
+		checkRect.y + (checkRect.h-textH)/2,
+		textW,
+		textH,
+	}
+	return &checkBox{
+		rect:      bounds,
+		checkRect: checkRect,
+		textRect:  textRect,
+		text:      text,
+		id:        id,
+	}
+}
+
+type checkBox struct {
+	rect
+	checkRect rect
+	textRect  rect
+	text      string
+	id        int
+	checked   bool
+}
+
+func (c *checkBox) bounds() rect {
+	return c.rect
+}
+
+func (c *checkBox) draw(g *graphics) {
+	g.rect(c.x, c.y, c.w, c.h, menuColdBackColor)
+	checkColor := checkBoxUncheckedColor
+	if c.checked {
+		checkColor = checkBoxCheckedColor
+	}
+	b := c.checkRect
+	g.rect(b.x, b.y, b.w, b.h, checkColor)
+	g.writeTextLineCenteredInRect(c.text, c.textRect, menuFontColor)
+}
+
+func (c *checkBox) mouseMovedTo(x, y int) {}
+
+func (c *checkBox) click(x, y int) (actionID int) {
+	if c.checkRect.contains(x, y) {
+		c.checked = !c.checked
+		if c.checked {
+			return c.id
+		}
+	}
+	return -1
+}
+
+func (c *checkBox) runeTyped(r rune)        {}
+func (c *checkBox) keyPressed(key glfw.Key) {}
+
+// check box group
+
+func newCheckBoxGroup(boxes ...*checkBox) *checkBoxGroup {
+	for _, box := range boxes {
+		box.checked = false
+	}
+	if len(boxes) > 0 {
+		boxes[0].checked = true
+	}
+	return &checkBoxGroup{boxes: boxes}
+}
+
+type checkBoxGroup struct {
+	boxes        []*checkBox
+	checkedIndex int
+}
+
+func (group *checkBoxGroup) bounds() rect {
+	if len(group.boxes) == 0 {
+		return rect{}
+	}
+	box := group.boxes[0]
+	x, y, r, b := box.x, box.y, box.w, box.h
+	for i := 1; i < len(group.boxes); i++ {
+		box = group.boxes[i]
+		if box.x < x {
+			x = box.x
+		}
+		if box.y < y {
+			y = box.y
+		}
+		if right := box.x + box.w; right > r {
+			r = right
+		}
+		if bottom := box.y + box.h; bottom > b {
+			b = bottom
+		}
+	}
+	return rect{x, y, r - x, b - y}
+}
+
+func (group *checkBoxGroup) draw(g *graphics) {
+	for _, box := range group.boxes {
+		box.draw(g)
+	}
+}
+
+func (group *checkBoxGroup) mouseMovedTo(x, y int) {
+	for _, box := range group.boxes {
+		box.mouseMovedTo(x, y)
+	}
+}
+
+func (group *checkBoxGroup) click(x, y int) (actionID int) {
+	for index, box := range group.boxes {
+		wasChecked := box.checked
+		id := box.click(x, y)
+		if wasChecked != box.checked {
+			// check changed
+			if !box.checked {
+				// check boxes in a group can not be unchecked by clicking on
+				// them, so if this was the case, check it again
+				box.checked = true
+			} else {
+				// new box was checked, uncheck the last one
+				group.boxes[group.checkedIndex].checked = false
+				group.checkedIndex = index
+				return id
+			}
+		}
+	}
+	return -1
+}
+
+func (group *checkBoxGroup) runeTyped(r rune) {
+	for _, box := range group.boxes {
+		box.runeTyped(r)
+	}
+}
+
+func (group *checkBoxGroup) keyPressed(key glfw.Key) {
+	for _, box := range group.boxes {
+		box.keyPressed(key)
 	}
 }
