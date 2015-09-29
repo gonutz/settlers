@@ -423,3 +423,9 @@ func (g *graphics) writeTextLineCenteredInRect(text string, r rect, color [4]flo
 	g.font.Write(text, x, y)
 	g.fontStash.FlushDraw()
 }
+
+func (g *graphics) writeLeftAlignedVerticallyCenteredAt(text string, x, centerY int, color [4]float32) {
+	w, h := g.font.TextSize(text)
+	y := centerY - h/2
+	g.writeTextLineCenteredInRect(text, rect{x, y, w, h}, color)
+}

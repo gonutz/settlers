@@ -7,6 +7,7 @@ import (
 	"github.com/gonutz/settlers/lang"
 	"math/rand"
 	"time"
+	"unsafe"
 )
 
 const (
@@ -15,11 +16,19 @@ const (
 	ChooseLanguageOption
 	QuitOption
 	LanguageOKOption
+	ThreePlayersOption
+	FourPlayersOption
+	StartGameOption
+	NewGameBackOption
+
 	LanguageOptionOffset = 1000
 )
 
 func init() {
 	rand.Seed(time.Now().UnixNano())
+	// TODO remove this test-code
+	var g game.Game
+	println(unsafe.Sizeof(g))
 }
 
 func NewGameUI(window Window) (*gameUI, error) {
@@ -28,56 +37,112 @@ func NewGameUI(window Window) (*gameUI, error) {
 		return nil, err
 	}
 	g := game.New([]game.Color{game.Red, game.Blue, game.White}, 1)
-	newGame := newButton("", rect{450, 400, 500, 80}, NewGameOption)
-	joinRemoteGame := newButton("", rect{450, 500, 500, 80}, JoinRemoteGameOption)
-	chooseLanguage := newButton("", rect{450, 600, 500, 80}, ChooseLanguageOption)
-	quit := newButton("", rect{450, 700, 500, 80}, QuitOption)
+	newGame := newButton(lang.NewGame, rect{450, 400, 500, 80}, NewGameOption)
+	joinRemoteGame := newButton(lang.JoinRemoteGame, rect{450, 500, 500, 80}, JoinRemoteGameOption)
+	chooseLanguage := newButton(lang.LanguageWord, rect{450, 600, 500, 80}, ChooseLanguageOption)
+	quit := newButton(lang.Quit, rect{450, 700, 500, 80}, QuitOption)
+	threePlayers := newCheckBox(lang.ThreePlayers, rect{500 - 180, 150, 360, 80}, ThreePlayersOption)
+	fourPlayers := newCheckBox(lang.FourPlayers, rect{500 + 180, 150, 360, 80}, FourPlayersOption)
+	startGame := newButton(lang.StartGame, rect{500, 1110, 450, 80}, StartGameOption)
+	back := newButton(lang.Back, rect{500, 1210, 450, 80}, NewGameBackOption)
 	var langCheckBoxes []*checkBox
 	for language := lang.Language(0); language < lang.LanguageCount; language++ {
-		langCheckBoxes = append(langCheckBoxes,
-			newCheckBox(
-				lang.GetLanguageName(language),
-				rect{550, 400 + 100*int(language), 300, 80},
-				graphics.font,
-				LanguageOptionOffset+int(language),
+		cb := newCheckBox(
+			lang.Item(language),
+			rect{550, 400 + 80*int(language), 300, 80},
+			LanguageOptionOffset+int(language),
+		)
+		langCheckBoxes = append(langCheckBoxes, cb)
+	}
+	languageOK := newButton(
+		lang.OK,
+		rect{
+			langCheckBoxes[0].x,
+			langCheckBoxes[len(langCheckBoxes)-1].y + 100,
+			langCheckBoxes[0].w,
+			langCheckBoxes[0].h},
+		LanguageOKOption,
+	)
+
+	var playerMenus [4]guiElement
+	for i := range playerMenus {
+		nameText := newTextBox(lang.Name, rect{400, 500, 500, 80}, graphics.font)
+		nameText.text = string('1' + i)
+		playHere := newCheckBox(lang.PlayHere, rect{400, 600, 650, 80}, -1)
+		playAI := newCheckBox(lang.AIPlayer, rect{400, 680, 650, 80}, -1)
+		playNetwork := newCheckBox(lang.NetworkPlayer, rect{400, 760, 650, 80}, -1)
+		ipText := newTextBox(lang.IP, rect{490, 840, 500, 80}, graphics.font)
+		ipText.text = "127.0.0.1"
+		portText := newTextBox(lang.Port, rect{490, 920, 500, 80}, graphics.font)
+		portText.text = "5555"
+		playNetwork.onCheckChange(func(checked bool) {
+			ipText.setEnabled(checked)
+			portText.setEnabled(checked)
+		})
+
+		playerMenus[i] = newComposite(
+			newSpacer(500, 480, 0, 20),
+			nameText,
+			newCheckBoxGroup(
+				playHere,
+				playAI,
+				playNetwork,
 			),
+			ipText,
+			portText,
 		)
 	}
+
 	ui := &gameUI{
 		game:     g,
 		window:   window,
 		camera:   newCamera(),
 		graphics: graphics,
 		buyMenu:  newBuyMenu(graphics, g),
-		mainMenu: newMenu(
+		mainMenu: newVisibility(true, newComposite(
 			newGame,
 			joinRemoteGame,
 			chooseLanguage,
 			quit,
-		),
-		joinGameMenu: newMenu(
-			newButton("Yes", rect{500, 400, 450, 80}, -1),
-			newButton("OK", rect{500, 500, 450, 80}, -1),
-			newButton("Well...", rect{500, 600, 450, 80}, -1),
-		),
-		languageMenu: newMenu(
+		)),
+		newGameMenu: newVisibility(false, newComposite(
+			newCheckBoxGroup(
+				threePlayers,
+				fourPlayers,
+			),
+
+			newTabSheet(graphics.font,
+				newTab(
+					"      ",
+					[4]float32{1, 0, 0, 1},
+					playerMenus[0],
+				),
+				newTab(
+					"      ",
+					[4]float32{0, 0, 1, 1},
+					playerMenus[1],
+				),
+				newTab(
+					"      ",
+					[4]float32{1, 1, 1, 1},
+					playerMenus[2],
+				),
+				newTab(
+					"      ",
+					[4]float32{1, 0.5, 0, 1},
+					playerMenus[3],
+				),
+			),
+
+			startGame,
+			back,
+		)),
+		languageMenu: newVisibility(false, newComposite(
 			newCheckBoxGroup(langCheckBoxes...),
-			newButton(
-				"OK",
-				rect{
-					langCheckBoxes[0].x,
-					langCheckBoxes[len(langCheckBoxes)-1].y + 100,
-					langCheckBoxes[0].w,
-					langCheckBoxes[0].h},
-				LanguageOKOption),
-		),
-		newGameButton:        newGame,
-		joinRemoteGameButton: joinRemoteGame,
-		chooseLanguageButton: chooseLanguage,
-		quitButton:           quit,
+			languageOK,
+		)),
 	}
-	ui.mainMenu.show()
-	ui.menus = []*menu{ui.mainMenu, ui.joinGameMenu, ui.languageMenu}
+	ui.gui = newComposite(ui.mainMenu, ui.newGameMenu, ui.languageMenu)
 	if err := ui.init(); err != nil {
 		return nil, err
 	}
@@ -87,21 +152,17 @@ func NewGameUI(window Window) (*gameUI, error) {
 }
 
 type gameUI struct {
-	game                 *game.Game
-	window               Window
-	camera               *camera
-	graphics             *graphics
-	mouseX, mouseY       float64
-	buyMenu              *buyMenu
-	menus                []*menu
-	mainMenu             *menu
-	joinGameMenu         *menu
-	languageMenu         *menu
-	quitting             bool
-	newGameButton        *button
-	joinRemoteGameButton *button
-	chooseLanguageButton *button
-	quitButton           *button
+	game           *game.Game
+	window         Window
+	camera         *camera
+	graphics       *graphics
+	mouseX, mouseY float64
+	buyMenu        *buyMenu
+	gui            guiElement
+	mainMenu       *visibility
+	newGameMenu    *visibility
+	languageMenu   *visibility
+	quitting       bool
 }
 
 type Window interface {
@@ -112,10 +173,6 @@ type Window interface {
 func (ui *gameUI) setLanguage(id lang.Language) {
 	lang.CurrentLanguage = id
 	ui.window.SetTitle(lang.Get(lang.Title))
-	ui.newGameButton.text = lang.Get(lang.NewGame)
-	ui.joinRemoteGameButton.text = lang.Get(lang.JoinRemoteGame)
-	ui.chooseLanguageButton.text = lang.Get(lang.LanguageWord)
-	ui.quitButton.text = lang.Get(lang.Quit)
 }
 
 func (ui *gameUI) init() error {
@@ -123,9 +180,7 @@ func (ui *gameUI) init() error {
 }
 
 func (ui *gameUI) KeyDown(key glfw.Key) {
-	for _, menu := range ui.menus {
-		menu.keyPressed(key)
-	}
+	ui.gui.keyPressed(key)
 	if key == glfw.KeyEscape {
 		ui.window.Close()
 	}
@@ -151,30 +206,31 @@ func (ui *gameUI) MouseButtonDown(button glfw.MouseButton) {
 	gameX, gameY := ui.camera.windowToGame(ui.mouseX, ui.mouseY)
 
 	if ui.game.State == game.NotStarted {
-		for _, menu := range ui.menus {
-			if action := menu.click(gameX, gameY); action != -1 {
-				switch action {
-				case NewGameOption:
-					ui.game = game.New([]game.Color{game.Red, game.Blue, game.White}, rand.Int())
-					ui.init()
-				case JoinRemoteGameOption:
-					ui.mainMenu.hide()
-					ui.joinGameMenu.show()
-				case ChooseLanguageOption:
-					ui.mainMenu.hide()
-					ui.languageMenu.show()
-				case QuitOption:
-					ui.window.Close()
-				case LanguageOKOption:
-					ui.mainMenu.show()
-					ui.languageMenu.hide()
-				}
-				if action >= LanguageOptionOffset {
-					language := lang.Language(action - LanguageOptionOffset)
-					ui.setLanguage(language)
-				}
-				return // ignore other event handling if any button was pressed
+		if action := ui.gui.click(gameX, gameY); action != -1 {
+			switch action {
+			case NewGameOption:
+				ui.mainMenu.visible = false
+				ui.newGameMenu.visible = true
+			case ChooseLanguageOption:
+				ui.mainMenu.visible = false
+				ui.languageMenu.visible = true
+			case QuitOption:
+				ui.window.Close()
+			case LanguageOKOption:
+				ui.languageMenu.visible = false
+				ui.mainMenu.visible = true
+			case NewGameBackOption:
+				ui.newGameMenu.visible = false
+				ui.mainMenu.visible = true
+			case StartGameOption:
+				ui.game = game.New([]game.Color{game.Red, game.Blue, game.White}, rand.Int())
+				ui.init()
 			}
+			if action >= LanguageOptionOffset {
+				language := lang.Language(action - LanguageOptionOffset)
+				ui.setLanguage(language)
+			}
+			return // ignore other event handling if any button was pressed
 		}
 	} else if ui.game.State == game.ChoosingNextAction {
 		ui.buyMenu.click(gameX, gameY)
@@ -210,16 +266,12 @@ func (ui *gameUI) MouseExited()  { ui.mouseX, ui.mouseY = -10000, -10000 }
 
 func (ui *gameUI) MouseMovedTo(x, y float64) {
 	gameX, gameY := ui.camera.windowToGame(ui.mouseX, ui.mouseY)
-	for _, menu := range ui.menus {
-		menu.mouseMovedTo(gameX, gameY)
-	}
+	ui.gui.mouseMovedTo(gameX, gameY)
 	ui.mouseX, ui.mouseY = x, y
 }
 
 func (ui *gameUI) RuneTyped(r rune) {
-	for _, menu := range ui.menus {
-		menu.runeTyped(r)
-	}
+	ui.gui.runeTyped(r)
 }
 
 func (ui *gameUI) WindowSizeChangedTo(width, height int) {
@@ -249,9 +301,7 @@ func (ui *gameUI) Draw() {
 	gameX, gameY := ui.camera.windowToGame(ui.mouseX, ui.mouseY)
 
 	if ui.game.State == game.NotStarted {
-		for _, menu := range ui.menus {
-			menu.draw(ui.graphics)
-		}
+		ui.gui.draw(ui.graphics)
 	} else if ui.game.State == game.ChoosingNextAction {
 	} else if ui.game.State == game.BuildingFirstSettlement ||
 		ui.game.State == game.BuildingSecondSettlement ||

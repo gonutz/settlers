@@ -10,40 +10,61 @@ const (
 	LanguageCount // TODO this has to always come last
 )
 
-func Get(id ItemID) string {
+func Get(id Item) string {
 	return languages[CurrentLanguage][id]
 }
 
-func GetLanguageName(id Language) string {
-	return languages[id][LanguageName]
-}
-
-type ItemID int
+type Item int
 
 const (
-	LanguageName ItemID = iota
+	EnglishName Item = iota
+	GermanName
 	Title
 	Menu
 	NewGame
 	JoinRemoteGame
 	Quit
 	LanguageWord
+	ThreePlayers
+	FourPlayers
+	Back
+	StartGame
+	OK
+	PlayHere
+	AIPlayer
+	NetworkPlayer
+	Name
+	IP
+	Port
 )
 
 var languages = [][]string{
 	// English
 	[]string{
 		"English",
+		"Deutsch",
 		"Settlers",
 		"Menu",
 		"New Game",
 		"Join Remote Game",
 		"Quit",
 		"Language",
+		"3 Players",
+		"4 Players",
+		"Back",
+		"Start Game",
+		"OK",
+		"Play on this PC",
+		"Computer AI",
+		"Network Player",
+		"Name:",
+		"IP:",
+		"Port:",
 	},
 
 	// German
 	[]string{
+		"English",
 		"Deutsch",
 		"Siedler",
 		"Menü",
@@ -51,5 +72,16 @@ var languages = [][]string{
 		"Netzwerkspiel beitreten",
 		"Beenden",
 		"Sprache",
+		"3 Spieler",
+		"4 Spieler",
+		"Zurück",
+		"Spiel starten",
+		"OK",
+		"Spielt hier",
+		"Computerspieler",
+		"Netzwerkspieler",
+		"Name:",
+		"IP:",
+		"Port:",
 	},
 }

@@ -56,20 +56,6 @@ type buyMenu struct {
 	state       menuState
 }
 
-type rect struct{ x, y, w, h int }
-
-func (r rect) plus(dx, dy int) rect {
-	return rect{r.x + dx, r.y + dy, r.w, r.h}
-}
-
-func (r rect) contains(x, y int) bool {
-	return x >= r.x && y >= r.y && x < r.x+r.w && y < r.y+r.h
-}
-
-func (r rect) center() (int, int) {
-	return r.x + r.w/2, r.y + r.h/2
-}
-
 type menuState int
 
 const (
@@ -157,7 +143,7 @@ func (m *buyMenu) update() {
 }
 
 func (m *buyMenu) click(x, y int) {
-	if m.iconBounds.plus(m.xOffset, 0).contains(x, y) {
+	if m.iconBounds.moveBy(m.xOffset, 0).contains(x, y) {
 		if m.state == opened || m.state == opening {
 			m.state = closing
 		} else {

@@ -13,8 +13,8 @@ import (
 )
 
 var outputImageFile = flag.String("o", "./all.png", "Atlas output file name, make this a PNG.")
-var tableFile = flag.String("t", "./table.txt", "Table file containing the mappings.")
-var binSize = flag.Int("s", 1024, "Bin size, the image will be s by s pixels big.")
+var binSize = flag.Int("s", 1024, "Atlas image size, the image will be s by s pixels in size.")
+var tableFile = flag.String("t", "./table.txt", "Output table file containing the mappings.")
 
 func main() {
 	flag.Parse()
