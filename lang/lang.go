@@ -7,8 +7,10 @@ type Language int
 const (
 	English Language = iota
 	German
-	LanguageCount // TODO this has to always come last
+	LastLanguage // NOTE this has to always come last
 )
+
+const LanguageCount = int(LastLanguage)
 
 func Get(id Item) string {
 	return languages[CurrentLanguage][id]

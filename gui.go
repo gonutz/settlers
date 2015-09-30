@@ -25,15 +25,15 @@ type guiElement interface {
 	keyPressed(key glfw.Key)
 }
 
-func boundingBox(elems []guiElement) rect {
-	if len(elems) == 0 {
+func boundingBox(bucket bounderBucket) rect {
+	if bucket.Len() == 0 {
 		return rect{}
 	}
 
-	bounds := elems[0].bounds()
+	bounds := bucket.At(0).bounds()
 	l, t, r, b := bounds.x, bounds.y, bounds.x, bounds.y
-	for i := 1; i < len(elems); i++ {
-		bounds := elems[i].bounds()
+	for i := 1; i < bucket.Len(); i++ {
+		bounds = bucket.At(i).bounds()
 		if bounds.x < l {
 			l = bounds.x
 		}
@@ -50,11 +50,25 @@ func boundingBox(elems []guiElement) rect {
 	return rect{l, t, r - l, b - t}
 }
 
+type bounderBucket interface {
+	Len() int
+	At(index int) bounder
+}
+
+type bounder interface {
+	bounds() rect
+}
+
 // composite
 
 func newComposite(elems ...guiElement) *composite {
-	return &composite{boundingBox(elems), elems}
+	return &composite{boundingBox(guiElementsToBounderBucket(elems)), elems}
 }
+
+type guiElementsToBounderBucket []guiElement
+
+func (slice guiElementsToBounderBucket) Len() int         { return len(slice) }
+func (slice guiElementsToBounderBucket) At(i int) bounder { return slice[i] }
 
 type composite struct {
 	rect
@@ -115,7 +129,8 @@ type button struct {
 	action int
 }
 
-func (b *button) bounds() rect { return b.rect }
+func (b *button) bounds() rect          { return b.rect }
+func (b *button) setBounds(bounds rect) { b.rect = bounds }
 
 func (b *button) draw(g *graphics) {
 	color := menuColdBackColor
@@ -362,45 +377,58 @@ func (group *checkBoxGroup) click(x, y int) (actionID int) {
 // tab sheet
 
 func newTabSheet(font textSizer, tabs ...*tab) *tabSheet {
-	elems := make([]guiElement, len(tabs))
-	for i, t := range tabs {
-		elems[i] = t.content
-	}
-	bounds := boundingBox(elems)
+	sheet := &tabSheet{tabs: tabs, font: font}
+	sheet.relayout()
+	return sheet
+}
 
-	captionBounds := make([]rect, len(tabs))
+func (s *tabSheet) relayout() {
+	s.visibleTabs = make([]*tab, 0, len(s.tabs))
+	elems := make([]guiElement, 0, len(s.tabs))
+	lastVisibleIndex := 0
+	for i, tab := range s.tabs {
+		if tab.visible {
+			s.visibleTabs = append(s.visibleTabs, tab)
+			elems = append(elems, tab.content)
+			lastVisibleIndex = i
+		}
+	}
+	if !s.tabs[s.activeIndex].visible {
+		s.activeIndex = lastVisibleIndex
+	}
+	bounds := boundingBox(guiElementsToBounderBucket(elems))
+
+	captionBounds := make([]rect, len(s.visibleTabs))
+	captionW := bounds.w / len(s.visibleTabs)
 
 	x := bounds.x
 	captionH := 0
-	for i, tab := range tabs {
-		w, h := font.TextSize(tab.title)
-		w += 20
+	for i, tab := range s.visibleTabs {
+		_, h := s.font.TextSize(tab.title)
 		h += 25
-		captionBounds[i] = rect{x, bounds.y - h, w, h}
-		x += w
+		captionBounds[i] = rect{x, bounds.y - h, captionW, h}
+		x += captionW
 		if h > captionH {
 			captionH = h
 		}
 	}
 
 	const margin = 0
-	return &tabSheet{
-		rect{
-			bounds.x - margin,
-			bounds.y - captionH - margin,
-			bounds.w + 2*margin,
-			bounds.h + captionH + 2*margin,
-		},
-		tabs,
-		0,
-		captionBounds,
-		captionH,
+	s.rect = rect{
+		bounds.x - margin,
+		bounds.y - captionH - margin,
+		bounds.w + 2*margin,
+		bounds.h + captionH + 2*margin,
 	}
+	s.captionBounds = captionBounds
+	s.captionH = captionH
 }
 
 type tabSheet struct {
 	rect
+	font          textSizer
 	tabs          []*tab
+	visibleTabs   []*tab
 	activeIndex   int
 	captionBounds []rect
 	captionH      int
@@ -409,12 +437,12 @@ type tabSheet struct {
 func (s *tabSheet) bounds() rect { return s.rect }
 
 func (s *tabSheet) draw(g *graphics) {
-	g.rect(s.x, s.y+s.captionH, s.w, s.h-s.captionH, s.tabs[s.activeIndex].color)
-	for i, tab := range s.tabs {
+	g.rect(s.x, s.y+s.captionH, s.w, s.h-s.captionH, s.visibleTabs[s.activeIndex].color)
+	for i, tab := range s.visibleTabs {
 		b := s.captionBounds[i]
 		color := tab.color
 		if i != s.activeIndex {
-			color[3] *= 0.9
+			color[3] *= 0.8
 		}
 		g.rect(b.x, b.y, b.w, b.h, color)
 		fontColor := menuColdFontColor
@@ -423,11 +451,11 @@ func (s *tabSheet) draw(g *graphics) {
 		}
 		g.writeTextLineCenteredInRect(tab.title, b, fontColor)
 	}
-	s.tabs[s.activeIndex].content.draw(g)
+	s.visibleTabs[s.activeIndex].content.draw(g)
 }
 
 func (s *tabSheet) mouseMovedTo(x, y int) {
-	s.tabs[s.activeIndex].content.mouseMovedTo(x, y)
+	s.visibleTabs[s.activeIndex].content.mouseMovedTo(x, y)
 }
 
 func (s *tabSheet) click(x, y int) (actionID int) {
@@ -437,33 +465,34 @@ func (s *tabSheet) click(x, y int) (actionID int) {
 			return -1
 		}
 	}
-	return s.tabs[s.activeIndex].content.click(x, y)
+	return s.visibleTabs[s.activeIndex].content.click(x, y)
 }
 
 func (s *tabSheet) runeTyped(r rune) {
-	s.tabs[s.activeIndex].content.runeTyped(r)
+	s.visibleTabs[s.activeIndex].content.runeTyped(r)
 }
 
 func (s *tabSheet) keyPressed(key glfw.Key) {
-	s.tabs[s.activeIndex].content.keyPressed(key)
+	s.visibleTabs[s.activeIndex].content.keyPressed(key)
 }
 
 // tab
 
-func newTab(title string, color [4]float32, content guiElement) *tab {
-	return &tab{title, content, color}
+func newTab(title string, color [4]float32, content guiElement, visible bool) *tab {
+	return &tab{title, content, color, visible}
 }
 
 type tab struct {
 	title   string
 	content guiElement
 	color   [4]float32
+	visible bool
 }
 
 // spacer
 
-func newSpacer(x, y, w, h int) spacer {
-	return spacer(rect{x, y, w, h})
+func newSpacer(bounds rect) spacer {
+	return spacer(bounds)
 }
 
 type spacer rect
@@ -538,4 +567,32 @@ func (v *visibility) keyPressed(key glfw.Key) {
 		return
 	}
 	v.guiElement.keyPressed(key)
+}
+
+// layout code
+
+func layoutRectsCentered(cx, cy int, in ...rect) []rect {
+	l, t, r, b := in[0].x, in[0].y, in[0].x, in[0].y
+	for _, rect := range in {
+		if rect.x < l {
+			l = rect.x
+		}
+		if rect.y < t {
+			t = rect.y
+		}
+		if right := rect.x + rect.w; right > r {
+			r = right
+		}
+		if bottom := rect.y + rect.h; bottom > b {
+			b = bottom
+		}
+	}
+	rectCenterX, rectCenterY := (l+r)/2, (t+b)/2
+	offsetX, offsetY := cx-rectCenterX, cy-rectCenterY
+
+	out := make([]rect, len(in))
+	for i, r := range in {
+		out[i] = rect{r.x + offsetX, r.y + offsetY, r.w, r.h}
+	}
+	return out
 }
