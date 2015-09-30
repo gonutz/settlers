@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"github.com/go-gl/glfw/v3.1/glfw"
 	"github.com/gonutz/settlers/lang"
 )
@@ -60,33 +61,86 @@ type bounder interface {
 	bounds() rect
 }
 
-// composite
+// windows are visible by default
 
-func newComposite(layout layout, elems ...guiElement) *composite {
+func newWindow(bounds rect, layout layout, elems ...guiElement) *window {
+	w := &window{newComposite(elems...), true}
 	for _, e := range elems {
 		layout.addElement(e)
 	}
-	layout.relayout()
+	layout.relayout(bounds)
+	return w
+}
+
+type window struct {
+	*composite
+	visible bool
+}
+
+func (w *window) setVisible(v bool) { w.visible = v }
+
+func (w *window) draw(g *graphics) {
+	if !w.visible {
+		return
+	}
+	w.composite.draw(g)
+}
+
+func (w *window) mouseMovedTo(x, y int) {
+	if !w.visible {
+		return
+	}
+	w.composite.mouseMovedTo(x, y)
+}
+
+func (w *window) click(x, y int) (actionID int) {
+	if !w.visible {
+		return -1
+	}
+	return w.composite.click(x, y)
+}
+
+func (w *window) runeTyped(r rune) {
+	if !w.visible {
+		return
+	}
+	w.composite.runeTyped(r)
+}
+
+func (w *window) keyPressed(key glfw.Key) {
+	if !w.visible {
+		return
+	}
+	w.composite.keyPressed(key)
+}
+
+// composite
+
+func newComposite(elems ...guiElement) *composite {
 	return &composite{
 		boundingBox(guiElementsToBounderBucket(elems)),
-		layout,
 		elems,
 	}
 }
 
 type composite struct {
 	rect
-	layout layout
-	elems  []guiElement
+	elems []guiElement
 }
 
-type guiElementsToBounderBucket []guiElement
+func (c *composite) bounds() rect { return c.rect }
 
-func (slice guiElementsToBounderBucket) Len() int         { return len(slice) }
-func (slice guiElementsToBounderBucket) At(i int) bounder { return slice[i] }
-
-func (c *composite) bounds() rect          { return c.rect }
-func (c *composite) setBounds(bounds rect) { c.rect = bounds }
+func (c *composite) setBounds(bounds rect) {
+	println("from", c.x, c.y)
+	dx, dy := bounds.x-c.x, bounds.y-c.y
+	for _, e := range c.elems {
+		fmt.Println("before", e.bounds())
+		e.setBounds(e.bounds().moveBy(dx, dy))
+		fmt.Println("after", e.bounds())
+	}
+	c.rect = bounds
+	println("to", c.x, c.y)
+}
 
 func (c *composite) draw(g *graphics) {
 	for _, e := range c.elems {
@@ -120,6 +174,11 @@ func (c *composite) keyPressed(key glfw.Key) {
 		e.keyPressed(key)
 	}
 }
+
+type guiElementsToBounderBucket []guiElement
+
+func (slice guiElementsToBounderBucket) Len() int         { return len(slice) }
+func (slice guiElementsToBounderBucket) At(i int) bounder { return slice[i] }
 
 // button
 
@@ -268,18 +327,20 @@ func (t *textBox) setEnabled(enabled bool) {
 // check box
 
 func newCheckBox(textID lang.Item, bounds rect, id int) *checkBox {
-	const margin = 10
-	size := bounds.h - 2*margin
-	checkRect := rect{bounds.x + margin, bounds.y + margin, size, size}
-	textX, textY := checkRect.x+checkRect.w+3*margin, bounds.y+bounds.h/2
-	return &checkBox{
-		rect:      bounds,
-		checkRect: checkRect,
-		textX:     textX,
-		textY:     textY,
-		textID:    textID,
-		id:        id,
+	cb := &checkBox{
+		rect:   bounds,
+		textID: textID,
+		id:     id,
 	}
+	cb.layout()
+	return cb
+}
+
+func (c *checkBox) layout() {
+	const margin = 10
+	size := c.rect.h - 2*margin
+	c.checkRect = rect{c.rect.x + margin, c.rect.y + margin, size, size}
+	c.textX, c.textY = c.checkRect.x+c.checkRect.w+3*margin, c.rect.y+c.rect.h/2
 }
 
 type checkBox struct {
@@ -292,8 +353,12 @@ type checkBox struct {
 	checkChangeEvent func(bool)
 }
 
-func (c *checkBox) bounds() rect          { return c.rect }
-func (c *checkBox) setBounds(bounds rect) { c.rect = bounds }
+func (c *checkBox) bounds() rect { return c.rect }
+
+func (c *checkBox) setBounds(bounds rect) {
+	c.rect = bounds
+	c.layout()
+}
 
 func (c *checkBox) draw(g *graphics) {
 	g.rect(c.x, c.y, c.w, c.h, menuColdBackColor)
@@ -346,12 +411,15 @@ func newCheckBoxGroup(boxes ...*checkBox) *checkBoxGroup {
 	if len(boxes) > 0 {
 		boxes[0].setChecked(true)
 	}
+	layout := newTopLeftLayout()
 	elems := make([]guiElement, len(boxes))
 	for i, b := range boxes {
 		elems[i] = b
+		layout.addElement(b)
 	}
+	layout.relayout(rect{})
 	return &checkBoxGroup{
-		composite: newComposite(newDummyLayout() /*TODO*/, elems...),
+		composite: newComposite(elems...),
 		boxes:     boxes,
 	}
 }
@@ -520,8 +588,9 @@ func (spacer) keyPressed(glfw.Key)           {}
 // panel
 
 func newPanel(color [4]float32, elems ...guiElement) *panel {
+	// TODO make sure the layout acts inside the panel's bounds
 	return &panel{
-		composite: newComposite(newDummyLayout() /*TODO*/, elems...),
+		composite: newComposite(elems...),
 		color:     color,
 	}
 }

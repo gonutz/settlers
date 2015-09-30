@@ -1,8 +1,8 @@
 package main
 
 type layout interface {
-	addElement(bounded)
-	relayout()
+	addElement(bounded) // TODO remove this and add parameter to relayout
+	relayout(in rect)
 }
 
 type bounded interface {
@@ -17,7 +17,7 @@ func newDummyLayout() dummyLayout { return dummyLayout{} }
 type dummyLayout struct{}
 
 func (dummyLayout) addElement(bounded) {}
-func (dummyLayout) relayout()          {}
+func (dummyLayout) relayout(rect)      {}
 
 // layoutBase implements addElement with a slice. This way not every layout has
 // to re-implement it.
@@ -32,19 +32,19 @@ func (l *layoutBase) addElement(item bounded) {
 // center layout aligns the bounding box of its elements so its center lies on a
 // given point
 
-func newCenterLayout(centerX, centerY int) *centerLayout {
-	return &centerLayout{new(layoutBase), centerX, centerY}
+func newCenterLayout() *centerLayout {
+	return &centerLayout{layoutBase{}}
 }
 
 type centerLayout struct {
-	*layoutBase
-	cx, cy int
+	layoutBase
 }
 
-func (l *centerLayout) relayout() {
+func (l *centerLayout) relayout(in rect) {
+	cx, cy := in.x+in.w/2, in.y+in.h/2
 	bounds := boundingBox(boundingBoxableItems(l.items))
 	boundsCx, boundsCy := bounds.x+bounds.w/2, bounds.y+bounds.h/2
-	dx, dy := l.cx-boundsCx, l.cy-boundsCy
+	dx, dy := cx-boundsCx, cy-boundsCy
 	for _, item := range l.items {
 		b := item.bounds()
 		item.setBounds(rect{b.x + dx, b.y + dy, b.w, b.h})
@@ -57,32 +57,31 @@ func (slice boundingBoxableItems) Len() int         { return len(slice) }
 func (slice boundingBoxableItems) At(i int) bounder { return slice[i] }
 
 // The vertical flow layout puts all elements directly underneath each other and
-// centers them horizontally on each row. The bounding rect around the result
-// starts at 0,0 so the first item will start at y=0 and x=0+offset where the
-// offset depends on the maximum width of all elements.
+// centers them horizontally on each row. The whole block will be vertically
+// centered as well.
 
 func newVerticalFlowLayout(verticalSpaceBetweenElements int) *verticalFlowLayout {
-	return &verticalFlowLayout{new(layoutBase), verticalSpaceBetweenElements}
+	return &verticalFlowLayout{layoutBase{}, verticalSpaceBetweenElements}
 }
 
 type verticalFlowLayout struct {
-	*layoutBase
+	layoutBase
 	yMargin int
 }
 
-func (l *verticalFlowLayout) relayout() {
-	maxWidth := 0
-	for _, item := range l.items {
-		b := item.bounds()
-		if b.w > maxWidth {
-			maxWidth = b.w
+func (l *verticalFlowLayout) relayout(in rect) {
+	height := 0
+	if len(l.items) > 0 {
+		height = l.items[0].bounds().h
+		for i := 1; i < len(l.items); i++ {
+			height += l.yMargin + l.items[i].bounds().h
 		}
 	}
 
-	y := 0
+	y := in.y + (in.h-height)/2
 	for _, item := range l.items {
 		b := item.bounds()
-		item.setBounds(rect{b.x + (maxWidth-b.w)/2, y, b.w, b.h})
+		item.setBounds(rect{b.x + (in.w-b.w)/2, y, b.w, b.h})
 		y += b.h + l.yMargin
 	}
 }
@@ -103,8 +102,29 @@ func (l *compositeLayout) addElement(b bounded) {
 	}
 }
 
-func (l *compositeLayout) relayout() {
+func (l *compositeLayout) relayout(in rect) {
 	for _, layout := range l.layouts {
-		layout.relayout()
+		layout.relayout(in)
+	}
+}
+
+// The top-left layout sets the first element at the top-left of the destination
+// rectangle and then simply puts all following elements under it with no margin
+// in y and at x=in.x .
+
+func newTopLeftLayout() *topLeftLayout {
+	return &topLeftLayout{layoutBase{}}
+}
+
+type topLeftLayout struct {
+	layoutBase
+}
+
+func (l *topLeftLayout) relayout(in rect) {
+	y := in.y
+	for _, item := range l.items {
+		b := item.bounds()
+		item.setBounds(rect{in.x, y, b.w, b.h})
+		y += b.h
 	}
 }

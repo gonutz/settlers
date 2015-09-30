@@ -39,66 +39,37 @@ func NewGameUI(window Window) (*gameUI, error) {
 	g := game.New([]game.Color{game.Red, game.Blue, game.White}, 1)
 
 	// main menu
-	newGame := newButton(lang.NewGame, rect{0, 0, 500, 80}, NewGameOption)
-	joinRemoteGame := newButton(lang.JoinRemoteGame, rect{0, 200, 500, 80}, JoinRemoteGameOption)
-	chooseLanguage := newButton(lang.LanguageWord, rect{0, 300, 500, 80}, ChooseLanguageOption)
-	quit := newButton(lang.Quit, rect{0, 400, 500, 80}, QuitOption)
-	mainMenu := newComposite(
-		newCompositeLayout(
-			newVerticalFlowLayout(20),
-			newCenterLayout(gameW/2, gameH/2),
-		),
+	size := func(w, h int) rect { return rect{w: w, h: h} }
+	newGame := newButton(lang.NewGame, size(500, 80), NewGameOption)
+	joinRemoteGame := newButton(lang.JoinRemoteGame, size(500, 80), JoinRemoteGameOption)
+	chooseLanguage := newButton(lang.LanguageWord, size(500, 80), ChooseLanguageOption)
+	quit := newButton(lang.Quit, size(500, 80), QuitOption)
+	mainMenu := newWindow(
+		rect{0, 0, gameW, gameH},
+		newVerticalFlowLayout(20),
 		newGame,
 		joinRemoteGame,
 		chooseLanguage,
 		quit,
 	)
-	println(mainMenu.h)
 
 	// language menu
-	centerX, centerY := gameW/2, gameH/2
-	bounds := make([]rect, lang.LanguageCount)
+	var langBoxes []*checkBox
 	for language := lang.Language(0); language < lang.LastLanguage; language++ {
-		bounds[int(language)] = rect{0, int(language) * 80, 300, 80}
+		action := LanguageOptionOffset + int(language)
+		cb := newCheckBox(lang.Item(language), size(300, 80), action)
+		langBoxes = append(langBoxes, cb)
 	}
-	bounds = append(bounds, rect{0, lang.LanguageCount*80 + 20, 300, 80})
-	bounds = layoutRectsCentered(centerX, centerY, bounds...)
-
-	var langCheckBoxes []*checkBox
-	for language := lang.Language(0); language < lang.LastLanguage; language++ {
-		cb := newCheckBox(
-			lang.Item(language),
-			bounds[int(language)],
-			LanguageOptionOffset+int(language),
-		)
-		langCheckBoxes = append(langCheckBoxes, cb)
-	}
-	languageOK := newButton(
-		lang.OK,
-		rect{
-			langCheckBoxes[0].x,
-			langCheckBoxes[len(langCheckBoxes)-1].y + 100,
-			langCheckBoxes[0].w,
-			langCheckBoxes[0].h},
-		LanguageOKOption,
+	languageMenu := newWindow(
+		rect{0, 0, gameW, gameH},
+		newVerticalFlowLayout(0),
+		newCheckBoxGroup(langBoxes...),
+		newSpacer(size(0, 20)),
+		newButton(lang.OK, size(300, 80), LanguageOKOption),
 	)
+	languageMenu.setVisible(false)
 
 	// new game menu
-	//bounds = layoutRectsCentered(
-	//	centerX, centerY,
-	//	rect{0, 0, 350, 80},     // 3 players
-	//	rect{350, 0, 350, 80},   // 4 players
-	//	rect{100, 250, 500, 80}, // name
-	//	rect{100, 330, 500, 80}, // play here
-	//	rect{100, 410, 500, 80}, // play AI
-	//	rect{100, 490, 500, 80}, // play network
-	//	rect{100, 570, 500, 80}, // IP
-	//	rect{100, 650, 500, 80}, // port
-	//	rect{150, 820, 400, 80}, // start game
-	//	rect{150, 920, 400, 80}, // back
-	//	rect{100, 210, 500, 80}, // spacer before each tab
-	//	rect{100, 730, 500, 40}, // spacer after each tab
-	//)
 	// TODO lay these two out seperately
 	threePlayers := newCheckBox(lang.ThreePlayers, rect{0, 0, 350, 80}, ThreePlayersOption)
 	fourPlayers := newCheckBox(lang.FourPlayers, rect{0, 0, 350, 80}, FourPlayersOption)
@@ -119,7 +90,6 @@ func NewGameUI(window Window) (*gameUI, error) {
 		})
 
 		playerMenus[i] = newComposite(
-			newDummyLayout(),
 			newSpacer(rect{0, 0, 0, 40}),
 			nameText,
 			newCheckBoxGroup(
@@ -168,15 +138,8 @@ func NewGameUI(window Window) (*gameUI, error) {
 		camera:   newCamera(),
 		graphics: graphics,
 		buyMenu:  newBuyMenu(graphics, g),
-		mainMenu: newVisibility(true, newComposite(
-			newDummyLayout(),
-			newGame,
-			joinRemoteGame,
-			chooseLanguage,
-			quit,
-		)),
+		mainMenu: mainMenu,
 		newGameMenu: newVisibility(false, newComposite(
-			newDummyLayout(),
 			newCheckBoxGroup(
 				threePlayers,
 				fourPlayers,
@@ -185,15 +148,11 @@ func NewGameUI(window Window) (*gameUI, error) {
 			startGame,
 			back,
 		)),
-		languageMenu: newVisibility(false, newComposite(
-			newDummyLayout(),
-			newCheckBoxGroup(langCheckBoxes...),
-			languageOK,
-		)),
+		languageMenu:   languageMenu,
 		playerTabSheet: playersSheet,
 		lastPlayerTab:  playerTabs[3],
 	}
-	ui.gui = newComposite(newDummyLayout(), ui.mainMenu, ui.newGameMenu, ui.languageMenu)
+	ui.gui = newComposite(ui.mainMenu, ui.newGameMenu, ui.languageMenu)
 	if err := ui.init(); err != nil {
 		return nil, err
 	}
@@ -210,9 +169,9 @@ type gameUI struct {
 	mouseX, mouseY float64
 	buyMenu        *buyMenu
 	gui            guiElement
-	mainMenu       *visibility
+	mainMenu       *window
+	languageMenu   *window
 	newGameMenu    *visibility
-	languageMenu   *visibility
 	playerTabSheet *tabSheet
 	lastPlayerTab  *tab
 	quitting       bool
