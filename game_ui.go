@@ -31,7 +31,7 @@ func init() {
 	println(unsafe.Sizeof(g))
 }
 
-func NewGameUI(window Window) (*gameUI, error) {
+func NewGameUI(win Window) (*gameUI, error) {
 	graphics, err := newGraphics()
 	if err != nil {
 		return nil, err
@@ -89,7 +89,9 @@ func NewGameUI(window Window) (*gameUI, error) {
 			portText.setEnabled(checked)
 		})
 
-		playerMenus[i] = newComposite(
+		playerMenus[i] = newWindow(
+			size(500, 0), // TODO add pack() function to window ???
+			newVerticalFlowLayout(0),
 			newSpacer(rect{0, 0, 0, 40}),
 			nameText,
 			newCheckBoxGroup(
@@ -131,23 +133,27 @@ func NewGameUI(window Window) (*gameUI, error) {
 		),
 	}
 	playersSheet := newTabSheet(graphics.font, playerTabs[:]...)
+	newGameMenu := newWindow(
+		rect{0, 0, gameW, gameH},
+		newVerticalFlowLayout(0),
+		newCheckBoxGroup(threePlayers, fourPlayers),
+		newSpacer(size(0, 50)),
+		playersSheet,
+		newSpacer(size(0, 50)),
+		startGame,
+		newSpacer(size(0, 20)),
+		back,
+	)
+	newGameMenu.setVisible(false)
 
 	ui := &gameUI{
-		game:     g,
-		window:   window,
-		camera:   newCamera(),
-		graphics: graphics,
-		buyMenu:  newBuyMenu(graphics, g),
-		mainMenu: mainMenu,
-		newGameMenu: newVisibility(false, newComposite(
-			newCheckBoxGroup(
-				threePlayers,
-				fourPlayers,
-			),
-			playersSheet,
-			startGame,
-			back,
-		)),
+		game:           g,
+		window:         win,
+		camera:         newCamera(),
+		graphics:       graphics,
+		buyMenu:        newBuyMenu(graphics, g),
+		mainMenu:       mainMenu,
+		newGameMenu:    newGameMenu,
 		languageMenu:   languageMenu,
 		playerTabSheet: playersSheet,
 		lastPlayerTab:  playerTabs[3],
@@ -171,7 +177,7 @@ type gameUI struct {
 	gui            guiElement
 	mainMenu       *window
 	languageMenu   *window
-	newGameMenu    *visibility
+	newGameMenu    *window
 	playerTabSheet *tabSheet
 	lastPlayerTab  *tab
 	quitting       bool

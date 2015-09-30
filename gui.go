@@ -1,20 +1,29 @@
 package main
 
 import (
-	"fmt"
 	"github.com/go-gl/glfw/v3.1/glfw"
 	"github.com/gonutz/settlers/lang"
 )
 
 var (
-	menuColdBackColor      = [4]float32{0.8, 0, 0, 1}
-	menuHotBackColor       = [4]float32{0.6, 0, 0, 1}
+	menuHotBackColor       = [4]float32{0.71, 0.4, 0.31, 1}
+	menuColdBackColor      = [4]float32{0.7, 0.27, 0.137, 1}
 	menuFontColor          = [4]float32{1, 1, 1, 1}
 	menuDisabledFontColor  = [4]float32{0.6, 0.6, 0.6, 1}
 	menuColdFontColor      = [4]float32{0.7, 0.7, 0.7, 1}
 	checkBoxCheckedColor   = [4]float32{0.5, 1, 0.5, 1}
 	checkBoxUncheckedColor = [4]float32{1, 0.5, 0.5, 1}
 )
+
+//var (
+//	menuColdBackColor      = [4]float32{0.8, 0, 0, 1}
+//	menuHotBackColor       = [4]float32{0.6, 0, 0, 1}
+//	menuFontColor          = [4]float32{1, 1, 1, 1}
+//	menuDisabledFontColor  = [4]float32{0.6, 0.6, 0.6, 1}
+//	menuColdFontColor      = [4]float32{0.7, 0.7, 0.7, 1}
+//	checkBoxCheckedColor   = [4]float32{0.5, 1, 0.5, 1}
+//	checkBoxUncheckedColor = [4]float32{1, 0.5, 0.5, 1}
+//)
 
 type guiElement interface {
 	bounds() rect
@@ -64,7 +73,7 @@ type bounder interface {
 // windows are visible by default
 
 func newWindow(bounds rect, layout layout, elems ...guiElement) *window {
-	w := &window{newComposite(elems...), true}
+	w := &window{newComposite(elems...), layout, true}
 	for _, e := range elems {
 		layout.addElement(e)
 	}
@@ -74,7 +83,13 @@ func newWindow(bounds rect, layout layout, elems ...guiElement) *window {
 
 type window struct {
 	*composite
+	layout  layout
 	visible bool
+}
+
+func (w *window) setBounds(bounds rect) {
+	w.composite.setBounds(bounds)
+	w.layout.relayout(bounds)
 }
 
 func (w *window) setVisible(v bool) { w.visible = v }
@@ -117,29 +132,23 @@ func (w *window) keyPressed(key glfw.Key) {
 // composite
 
 func newComposite(elems ...guiElement) *composite {
-	return &composite{
-		boundingBox(guiElementsToBounderBucket(elems)),
-		elems,
-	}
+	return &composite{elems}
 }
 
 type composite struct {
-	rect
 	elems []guiElement
 }
 
-func (c *composite) bounds() rect { return c.rect }
+func (c *composite) bounds() rect {
+	return boundingBox(guiElementsToBounderBucket(c.elems))
+}
 
 func (c *composite) setBounds(bounds rect) {
-	println("from", c.x, c.y)
-	dx, dy := bounds.x-c.x, bounds.y-c.y
+	b := c.bounds()
+	dx, dy := bounds.x-b.x, bounds.y-b.y
 	for _, e := range c.elems {
-		fmt.Println("before", e.bounds())
 		e.setBounds(e.bounds().moveBy(dx, dy))
-		fmt.Println("after", e.bounds())
 	}
-	c.rect = bounds
-	println("to", c.x, c.y)
 }
 
 func (c *composite) draw(g *graphics) {
@@ -233,10 +242,6 @@ func newTextBox(captionID lang.Item, bounds rect, font textSizer) *textBox {
 	}
 }
 
-type textSizer interface {
-	TextSize(text string) (w, h int)
-}
-
 type textBox struct {
 	rect
 	hot               bool
@@ -322,6 +327,10 @@ func (t *textBox) setEnabled(enabled bool) {
 	if t.disabled {
 		t.hot = false
 	}
+}
+
+type textSizer interface {
+	TextSize(text string) (w, h int)
 }
 
 // check box
@@ -511,16 +520,26 @@ type tabSheet struct {
 	captionH      int
 }
 
-func (s *tabSheet) bounds() rect          { return s.rect }
-func (s *tabSheet) setBounds(bounds rect) { s.rect = bounds }
+func (s *tabSheet) bounds() rect { return s.rect }
+
+func (s *tabSheet) setBounds(bounds rect) {
+	dx, dy := bounds.x-s.x, bounds.y-s.y
+	for _, tab := range s.tabs {
+		tab.content.setBounds(tab.content.bounds().moveBy(dx, dy))
+	}
+	s.rect = bounds
+	s.relayout()
+}
 
 func (s *tabSheet) draw(g *graphics) {
-	g.rect(s.x, s.y+s.captionH, s.w, s.h-s.captionH, s.visibleTabs[s.activeIndex].color)
+	activeColor := s.visibleTabs[s.activeIndex].color
+	activeColor[3] *= 0.85
+	g.rect(s.x, s.y+s.captionH, s.w, s.h-s.captionH, activeColor)
 	for i, tab := range s.visibleTabs {
 		b := s.captionBounds[i]
 		color := tab.color
-		if i != s.activeIndex {
-			color[3] *= 0.8
+		if i == s.activeIndex {
+			color = activeColor
 		}
 		g.rect(b.x, b.y, b.w, b.h, color)
 		fontColor := menuColdFontColor
@@ -584,97 +603,3 @@ func (spacer) mouseMovedTo(x, y int)         {}
 func (spacer) click(x, y int) (actionID int) { return -1 }
 func (spacer) runeTyped(rune)                {}
 func (spacer) keyPressed(glfw.Key)           {}
-
-// panel
-
-func newPanel(color [4]float32, elems ...guiElement) *panel {
-	// TODO make sure the layout acts inside the panel's bounds
-	return &panel{
-		composite: newComposite(elems...),
-		color:     color,
-	}
-}
-
-type panel struct {
-	*composite
-	color [4]float32
-}
-
-func (p *panel) draw(g *graphics) {
-	g.rect(p.x, p.y, p.w, p.h, p.color)
-	p.composite.draw(g)
-}
-
-//  be able to show/hide an element
-
-func newVisibility(visible bool, elem guiElement) *visibility {
-	return &visibility{elem, visible}
-}
-
-type visibility struct {
-	guiElement
-	visible bool
-}
-
-func (v *visibility) draw(g *graphics) {
-	if !v.visible {
-		return
-	}
-	v.guiElement.draw(g)
-}
-
-func (v *visibility) mouseMovedTo(x, y int) {
-	if !v.visible {
-		return
-	}
-	v.guiElement.mouseMovedTo(x, y)
-}
-
-func (v *visibility) click(x, y int) (actionID int) {
-	if !v.visible {
-		return -1
-	}
-	return v.guiElement.click(x, y)
-}
-
-func (v *visibility) runeTyped(r rune) {
-	if !v.visible {
-		return
-	}
-	v.guiElement.runeTyped(r)
-}
-
-func (v *visibility) keyPressed(key glfw.Key) {
-	if !v.visible {
-		return
-	}
-	v.guiElement.keyPressed(key)
-}
-
-// layout code
-
-func layoutRectsCentered(cx, cy int, in ...rect) []rect {
-	l, t, r, b := in[0].x, in[0].y, in[0].x, in[0].y
-	for _, rect := range in {
-		if rect.x < l {
-			l = rect.x
-		}
-		if rect.y < t {
-			t = rect.y
-		}
-		if right := rect.x + rect.w; right > r {
-			r = right
-		}
-		if bottom := rect.y + rect.h; bottom > b {
-			b = bottom
-		}
-	}
-	rectCenterX, rectCenterY := (l+r)/2, (t+b)/2
-	offsetX, offsetY := cx-rectCenterX, cy-rectCenterY
-
-	out := make([]rect, len(in))
-	for i, r := range in {
-		out[i] = rect{r.x + offsetX, r.y + offsetY, r.w, r.h}
-	}
-	return out
-}
