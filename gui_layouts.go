@@ -10,6 +10,15 @@ type bounded interface {
 	setBounds(rect)
 }
 
+// dummy layout does not change its elements
+
+func newDummyLayout() dummyLayout { return dummyLayout{} }
+
+type dummyLayout struct{}
+
+func (dummyLayout) addElement(bounded) {}
+func (dummyLayout) relayout()          {}
+
 // layoutBase implements addElement with a slice. This way not every layout has
 // to re-implement it.
 type layoutBase struct {
@@ -52,27 +61,50 @@ func (slice boundingBoxableItems) At(i int) bounder { return slice[i] }
 // starts at 0,0 so the first item will start at y=0 and x=0+offset where the
 // offset depends on the maximum width of all elements.
 
-func newVerticalFlowLayout() *verticalFlowLayout {
-	return &verticalFlowLayout{new(layoutBase)}
+func newVerticalFlowLayout(verticalSpaceBetweenElements int) *verticalFlowLayout {
+	return &verticalFlowLayout{new(layoutBase), verticalSpaceBetweenElements}
 }
 
 type verticalFlowLayout struct {
 	*layoutBase
+	yMargin int
 }
 
 func (l *verticalFlowLayout) relayout() {
-	maxWidth, height := 0, 0
+	maxWidth := 0
 	for _, item := range l.items {
 		b := item.bounds()
 		if b.w > maxWidth {
 			maxWidth = b.w
 		}
-		height += b.h
 	}
 
 	y := 0
 	for _, item := range l.items {
 		b := item.bounds()
 		item.setBounds(rect{b.x + (maxWidth-b.w)/2, y, b.w, b.h})
+		y += b.h + l.yMargin
+	}
+}
+
+// The composite layout simply applies all layouts one by one to its items.
+
+func newCompositeLayout(first layout, others ...layout) *compositeLayout {
+	return &compositeLayout{append([]layout{first}, others...)}
+}
+
+type compositeLayout struct {
+	layouts []layout
+}
+
+func (l *compositeLayout) addElement(b bounded) {
+	for _, layout := range l.layouts {
+		layout.addElement(b)
+	}
+}
+
+func (l *compositeLayout) relayout() {
+	for _, layout := range l.layouts {
+		layout.relayout()
 	}
 }

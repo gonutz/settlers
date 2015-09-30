@@ -17,12 +17,13 @@ var (
 
 type guiElement interface {
 	bounds() rect
-	draw(g *graphics)
+	setBounds(rect)
+	draw(*graphics)
 	mouseMovedTo(x, y int)
 	// click returns the ID of the activated action or -1 if none was activated.
 	click(x, y int) (actionID int)
-	runeTyped(r rune)
-	keyPressed(key glfw.Key)
+	runeTyped(rune)
+	keyPressed(glfw.Key)
 }
 
 func boundingBox(bucket bounderBucket) rect {
@@ -61,8 +62,22 @@ type bounder interface {
 
 // composite
 
-func newComposite(elems ...guiElement) *composite {
-	return &composite{boundingBox(guiElementsToBounderBucket(elems)), elems}
+func newComposite(layout layout, elems ...guiElement) *composite {
+	for _, e := range elems {
+		layout.addElement(e)
+	}
+	layout.relayout()
+	return &composite{
+		boundingBox(guiElementsToBounderBucket(elems)),
+		layout,
+		elems,
+	}
+}
+
+type composite struct {
+	rect
+	layout layout
+	elems  []guiElement
 }
 
 type guiElementsToBounderBucket []guiElement
@@ -70,14 +85,8 @@ type guiElementsToBounderBucket []guiElement
 func (slice guiElementsToBounderBucket) Len() int         { return len(slice) }
 func (slice guiElementsToBounderBucket) At(i int) bounder { return slice[i] }
 
-type composite struct {
-	rect
-	elems []guiElement
-}
-
-func (c *composite) bounds() rect {
-	return c.rect
-}
+func (c *composite) bounds() rect          { return c.rect }
+func (c *composite) setBounds(bounds rect) { c.rect = bounds }
 
 func (c *composite) draw(g *graphics) {
 	for _, e := range c.elems {
@@ -181,7 +190,8 @@ type textBox struct {
 	disabled          bool
 }
 
-func (t *textBox) bounds() rect { return t.rect }
+func (t *textBox) bounds() rect          { return t.rect }
+func (t *textBox) setBounds(bounds rect) { t.rect = bounds }
 
 func (t *textBox) click(x, y int) int {
 	if t.disabled {
@@ -282,9 +292,8 @@ type checkBox struct {
 	checkChangeEvent func(bool)
 }
 
-func (c *checkBox) bounds() rect {
-	return c.rect
-}
+func (c *checkBox) bounds() rect          { return c.rect }
+func (c *checkBox) setBounds(bounds rect) { c.rect = bounds }
 
 func (c *checkBox) draw(g *graphics) {
 	g.rect(c.x, c.y, c.w, c.h, menuColdBackColor)
@@ -342,7 +351,7 @@ func newCheckBoxGroup(boxes ...*checkBox) *checkBoxGroup {
 		elems[i] = b
 	}
 	return &checkBoxGroup{
-		composite: newComposite(elems...),
+		composite: newComposite(newDummyLayout() /*TODO*/, elems...),
 		boxes:     boxes,
 	}
 }
@@ -434,7 +443,8 @@ type tabSheet struct {
 	captionH      int
 }
 
-func (s *tabSheet) bounds() rect { return s.rect }
+func (s *tabSheet) bounds() rect          { return s.rect }
+func (s *tabSheet) setBounds(bounds rect) { s.rect = bounds }
 
 func (s *tabSheet) draw(g *graphics) {
 	g.rect(s.x, s.y+s.captionH, s.w, s.h-s.captionH, s.visibleTabs[s.activeIndex].color)
@@ -491,13 +501,16 @@ type tab struct {
 
 // spacer
 
-func newSpacer(bounds rect) spacer {
-	return spacer(bounds)
+func newSpacer(bounds rect) *spacer {
+	return &spacer{bounds}
 }
 
-type spacer rect
+type spacer struct {
+	rect
+}
 
-func (s spacer) bounds() rect                { return rect(s) }
+func (s *spacer) bounds() rect               { return s.rect }
+func (s *spacer) setBounds(bounds rect)      { s.rect = bounds }
 func (spacer) draw(*graphics)                {}
 func (spacer) mouseMovedTo(x, y int)         {}
 func (spacer) click(x, y int) (actionID int) { return -1 }
@@ -508,7 +521,7 @@ func (spacer) keyPressed(glfw.Key)           {}
 
 func newPanel(color [4]float32, elems ...guiElement) *panel {
 	return &panel{
-		composite: newComposite(elems...),
+		composite: newComposite(newDummyLayout() /*TODO*/, elems...),
 		color:     color,
 	}
 }

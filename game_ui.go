@@ -40,15 +40,20 @@ func NewGameUI(window Window) (*gameUI, error) {
 
 	// main menu
 	newGame := newButton(lang.NewGame, rect{0, 0, 500, 80}, NewGameOption)
-	joinRemoteGame := newButton(lang.JoinRemoteGame, rect{0, 100, 500, 80}, JoinRemoteGameOption)
-	chooseLanguage := newButton(lang.LanguageWord, rect{0, 200, 500, 80}, ChooseLanguageOption)
-	quit := newButton(lang.Quit, rect{0, 300, 500, 80}, QuitOption)
-	center := newCenterLayout(gameW/2, gameH/2)
-	center.addElement(newGame)
-	center.addElement(joinRemoteGame)
-	center.addElement(chooseLanguage)
-	center.addElement(quit)
-	center.relayout()
+	joinRemoteGame := newButton(lang.JoinRemoteGame, rect{0, 200, 500, 80}, JoinRemoteGameOption)
+	chooseLanguage := newButton(lang.LanguageWord, rect{0, 300, 500, 80}, ChooseLanguageOption)
+	quit := newButton(lang.Quit, rect{0, 400, 500, 80}, QuitOption)
+	mainMenu := newComposite(
+		newCompositeLayout(
+			newVerticalFlowLayout(20),
+			newCenterLayout(gameW/2, gameH/2),
+		),
+		newGame,
+		joinRemoteGame,
+		chooseLanguage,
+		quit,
+	)
+	println(mainMenu.h)
 
 	// language menu
 	centerX, centerY := gameW/2, gameH/2
@@ -79,33 +84,34 @@ func NewGameUI(window Window) (*gameUI, error) {
 	)
 
 	// new game menu
-	bounds = layoutRectsCentered(
-		centerX, centerY,
-		rect{0, 0, 350, 80},     // 3 players
-		rect{350, 0, 350, 80},   // 4 players
-		rect{100, 250, 500, 80}, // name
-		rect{100, 330, 500, 80}, // play here
-		rect{100, 410, 500, 80}, // play AI
-		rect{100, 490, 500, 80}, // play network
-		rect{100, 570, 500, 80}, // IP
-		rect{100, 650, 500, 80}, // port
-		rect{150, 820, 400, 80}, // start game
-		rect{150, 920, 400, 80}, // back
-		rect{100, 210, 500, 80}, // spacer before each tab
-		rect{100, 730, 500, 40}, // spacer after each tab
-	)
-	threePlayers := newCheckBox(lang.ThreePlayers, bounds[0], ThreePlayersOption)
-	fourPlayers := newCheckBox(lang.FourPlayers, bounds[1], FourPlayersOption)
+	//bounds = layoutRectsCentered(
+	//	centerX, centerY,
+	//	rect{0, 0, 350, 80},     // 3 players
+	//	rect{350, 0, 350, 80},   // 4 players
+	//	rect{100, 250, 500, 80}, // name
+	//	rect{100, 330, 500, 80}, // play here
+	//	rect{100, 410, 500, 80}, // play AI
+	//	rect{100, 490, 500, 80}, // play network
+	//	rect{100, 570, 500, 80}, // IP
+	//	rect{100, 650, 500, 80}, // port
+	//	rect{150, 820, 400, 80}, // start game
+	//	rect{150, 920, 400, 80}, // back
+	//	rect{100, 210, 500, 80}, // spacer before each tab
+	//	rect{100, 730, 500, 40}, // spacer after each tab
+	//)
+	// TODO lay these two out seperately
+	threePlayers := newCheckBox(lang.ThreePlayers, rect{0, 0, 350, 80}, ThreePlayersOption)
+	fourPlayers := newCheckBox(lang.FourPlayers, rect{0, 0, 350, 80}, FourPlayersOption)
 	var playerMenus [4]guiElement
 	for i := range playerMenus {
-		nameText := newTextBox(lang.Name, bounds[2], graphics.font)
+		nameText := newTextBox(lang.Name, rect{0, 0, 500, 80}, graphics.font)
 		nameText.text = string('1' + i)
-		playHere := newCheckBox(lang.PlayHere, bounds[3], -1)
-		playAI := newCheckBox(lang.AIPlayer, bounds[4], -1)
-		playNetwork := newCheckBox(lang.NetworkPlayer, bounds[5], -1)
-		ipText := newTextBox(lang.IP, bounds[6], graphics.font)
+		playHere := newCheckBox(lang.PlayHere, rect{0, 0, 500, 80}, -1)
+		playAI := newCheckBox(lang.AIPlayer, rect{0, 0, 500, 80}, -1)
+		playNetwork := newCheckBox(lang.NetworkPlayer, rect{0, 0, 500, 80}, -1)
+		ipText := newTextBox(lang.IP, rect{0, 0, 500, 80}, graphics.font)
 		ipText.text = "127.0.0.1"
-		portText := newTextBox(lang.Port, bounds[7], graphics.font)
+		portText := newTextBox(lang.Port, rect{0, 0, 500, 80}, graphics.font)
 		portText.text = "5555"
 		playNetwork.onCheckChange(func(checked bool) {
 			ipText.setEnabled(checked)
@@ -113,7 +119,8 @@ func NewGameUI(window Window) (*gameUI, error) {
 		})
 
 		playerMenus[i] = newComposite(
-			newSpacer(bounds[10]),
+			newDummyLayout(),
+			newSpacer(rect{0, 0, 0, 40}),
 			nameText,
 			newCheckBoxGroup(
 				playHere,
@@ -122,11 +129,11 @@ func NewGameUI(window Window) (*gameUI, error) {
 			),
 			ipText,
 			portText,
-			newSpacer(bounds[11]),
+			newSpacer(rect{0, 0, 0, 40}),
 		)
 	}
-	startGame := newButton(lang.StartGame, bounds[8], StartGameOption)
-	back := newButton(lang.Back, bounds[9], NewGameBackOption)
+	startGame := newButton(lang.StartGame, rect{0, 0, 400, 80}, StartGameOption)
+	back := newButton(lang.Back, rect{0, 0, 400, 80}, NewGameBackOption)
 	playerTabs := [4]*tab{
 		newTab(
 			"      ",
@@ -162,12 +169,14 @@ func NewGameUI(window Window) (*gameUI, error) {
 		graphics: graphics,
 		buyMenu:  newBuyMenu(graphics, g),
 		mainMenu: newVisibility(true, newComposite(
+			newDummyLayout(),
 			newGame,
 			joinRemoteGame,
 			chooseLanguage,
 			quit,
 		)),
 		newGameMenu: newVisibility(false, newComposite(
+			newDummyLayout(),
 			newCheckBoxGroup(
 				threePlayers,
 				fourPlayers,
@@ -177,13 +186,14 @@ func NewGameUI(window Window) (*gameUI, error) {
 			back,
 		)),
 		languageMenu: newVisibility(false, newComposite(
+			newDummyLayout(),
 			newCheckBoxGroup(langCheckBoxes...),
 			languageOK,
 		)),
 		playerTabSheet: playersSheet,
 		lastPlayerTab:  playerTabs[3],
 	}
-	ui.gui = newComposite(ui.mainMenu, ui.newGameMenu, ui.languageMenu)
+	ui.gui = newComposite(newDummyLayout(), ui.mainMenu, ui.newGameMenu, ui.languageMenu)
 	if err := ui.init(); err != nil {
 		return nil, err
 	}
