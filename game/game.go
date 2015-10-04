@@ -704,7 +704,7 @@ func (g *Game) GetTileAt(p TilePosition) (Tile, bool) {
 }
 
 // BuildSettlement assumes that CanBuildSettlement returned true right before
-// you call this
+// you call this.
 func (g *Game) BuildSettlement(c TileCorner) {
 	player := g.currentPlayerPointer()
 	for i := range player.Settlements {

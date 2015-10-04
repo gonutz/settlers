@@ -38,6 +38,16 @@ const (
 	Name
 	IP
 	Port
+	Connect
+	BuildFirstSettlement
+	BuildSecondSettlement
+	BuildFirstRoad
+	BuildSecondRoad
+	BuildRoad
+	BuildSettlement
+	BuildCity
+	ChooseNextAction
+	RollDice
 )
 
 var languages = [][]string{
@@ -62,6 +72,16 @@ var languages = [][]string{
 		"Name:",
 		"IP:",
 		"Port:",
+		"Connect",
+		"Build your first Settlement",
+		"Build your second Settlement",
+		"Build your first Road",
+		"Build your second Road",
+		"Build your Road",
+		"Build your Settlement",
+		"Build your City",
+		"Choose your next Action",
+		"Roll the Dice",
 	},
 
 	// German
@@ -85,5 +105,15 @@ var languages = [][]string{
 		"Name:",
 		"IP:",
 		"Port:",
+		"Verbinden",
+		"Baue deine erste Siedlung",
+		"Baue deine zweite Siedlung",
+		"Baue deine erste Straße",
+		"Baue deine zweite Straße",
+		"Baue deine Straße",
+		"Baue deine Siedlung",
+		"Baue deine Stadt",
+		"Wähle deine nächste Aktion",
+		"Würfle",
 	},
 }

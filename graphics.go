@@ -305,6 +305,19 @@ func playerColor(color game.Color) [4]float32 {
 	}
 }
 
+func fullPlayerColor(color game.Color) [4]float32 {
+	switch color {
+	case game.White:
+		return [4]float32{1, 1, 1, 1}
+	case game.Blue:
+		return [4]float32{0, 0, 1, 1}
+	case game.Red:
+		return [4]float32{1, 0, 0, 1}
+	default:
+		return [4]float32{1, 0.5, 0, 1}
+	}
+}
+
 func (g *graphics) drawRoadAt(x, y int, edge game.TileEdge, c game.Color) {
 	img := g.getGLImage("road_" + colorToString(c) + "_" + roadDirection(edge))
 	img.DrawAtXY(x-img.Width/2, y-img.Height/2)

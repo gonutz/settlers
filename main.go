@@ -49,7 +49,7 @@ func main() {
 		return
 	}
 
-	window.SetSize(640, 480)
+	window.SetSize(680, 640)
 	lastUpdate := time.Now().Add(-time.Hour)
 	const frameTimeInSeconds = 1.0 / 60
 	for !window.ShouldClose() {
@@ -61,6 +61,7 @@ func main() {
 			window.SwapBuffers()
 		}
 	}
+	ui.Finish()
 }
 
 type uiWindow struct {

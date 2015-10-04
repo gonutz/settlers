@@ -7,7 +7,7 @@ const (
 	cellH = 70
 )
 
-func newBuyMenu(g *graphics, game *game.Game) *buyMenu {
+func newBuyMenu(g *graphics, gamer gamer) *buyMenu {
 	symbols := []string{"lumber", "brick", "wool", "ore", "grain"}
 	maxHeight := 0
 	for _, symbol := range symbols {
@@ -22,7 +22,7 @@ func newBuyMenu(g *graphics, game *game.Game) *buyMenu {
 	iconBounds.y = mainBounds.y + mainBounds.h - iconBounds.h
 	return &buyMenu{
 		graphics:   g,
-		game:       game,
+		gamer:      gamer,
 		mainBounds: mainBounds,
 		iconBounds: iconBounds,
 		xOffset:    -leftBorder - mainBounds.w,
@@ -48,12 +48,16 @@ func newBuyMenu(g *graphics, game *game.Game) *buyMenu {
 //
 type buyMenu struct {
 	graphics    *graphics
-	game        *game.Game
+	gamer       gamer
 	mainBounds  rect
 	iconBounds  rect
 	left, right int
 	xOffset     int
 	state       menuState
+}
+
+type gamer interface {
+	Game() *game.Game
 }
 
 type menuState int
@@ -93,7 +97,7 @@ func (m *buyMenu) draw() {
 			m.graphics.drawImageCenteredAt(resource, x, y)
 		}
 	}
-	color := colorToString(m.game.GetCurrentPlayer().Color)
+	color := colorToString(m.gamer.Game().GetCurrentPlayer().Color)
 	symbols := []string{"road_" + color + "_up", "settlement_" + color, "city_" + color, "card_symbol"}
 	for line, symbol := range symbols {
 		x := m.xOffset + m.mainBounds.w - cellW
@@ -107,15 +111,16 @@ func (m *buyMenu) draw() {
 }
 
 func (m *buyMenu) canBuyItem(index int) bool {
+	game := m.gamer.Game()
 	switch index {
 	case 0:
-		return m.game.CanBuyRoad()
+		return game.CanBuyRoad()
 	case 1:
-		return m.game.CanBuySettlement()
+		return game.CanBuySettlement()
 	case 2:
-		return m.game.CanBuyCity()
+		return game.CanBuyCity()
 	case 3:
-		return m.game.CanBuyDevelopmentCard()
+		return game.CanBuyDevelopmentCard()
 	}
 	panic("illegal index")
 }
@@ -166,15 +171,16 @@ func (m *buyMenu) click(x, y int) {
 }
 
 func (m *buyMenu) buyItem(index int) {
+	game := m.gamer.Game()
 	switch index {
 	case 0:
-		m.game.BuyRoad()
+		game.BuyRoad()
 	case 1:
-		m.game.BuySettlement()
+		game.BuySettlement()
 	case 2:
-		m.game.BuyCity()
+		game.BuyCity()
 	case 3:
-		m.game.BuyDevelopmentCard()
+		game.BuyDevelopmentCard()
 	default:
 		panic("illegal index")
 	}

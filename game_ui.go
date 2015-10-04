@@ -1,13 +1,15 @@
 package main
 
 import (
+	"fmt"
 	"github.com/go-gl/gl/v2.1/gl"
 	"github.com/go-gl/glfw/v3.1/glfw"
 	"github.com/gonutz/settlers/game"
 	"github.com/gonutz/settlers/lang"
+	"github.com/gonutz/settlers/settings"
 	"math/rand"
+	"strconv"
 	"time"
-	"unsafe"
 )
 
 const (
@@ -26,12 +28,13 @@ const (
 
 func init() {
 	rand.Seed(time.Now().UnixNano())
-	// TODO remove this test-code
-	var g game.Game
-	println(unsafe.Sizeof(g))
 }
 
 func NewGameUI(win Window) (*gameUI, error) {
+	if err := settings.Settings.Load(); err != nil {
+		fmt.Println("cannot load last settings:", err)
+	}
+
 	graphics, err := newGraphics()
 	if err != nil {
 		return nil, err
@@ -58,6 +61,7 @@ func NewGameUI(win Window) (*gameUI, error) {
 	for language := lang.Language(0); language < lang.LastLanguage; language++ {
 		action := LanguageOptionOffset + int(language)
 		cb := newCheckBox(lang.Item(language), size(300, 80), action)
+		cb.setChecked(settings.Settings.Language == int(language))
 		langBoxes = append(langBoxes, cb)
 	}
 	languageMenu := newWindow(
@@ -70,29 +74,58 @@ func NewGameUI(win Window) (*gameUI, error) {
 	languageMenu.setVisible(false)
 
 	// new game menu
-	// TODO lay these two out seperately
-	threePlayers := newCheckBox(lang.ThreePlayers, rect{0, 0, 350, 80}, ThreePlayersOption)
-	fourPlayers := newCheckBox(lang.FourPlayers, rect{0, 0, 350, 80}, FourPlayersOption)
-	var playerMenus [4]guiElement
+	threePlayers := newCheckBox(lang.ThreePlayers, size(350, 80), ThreePlayersOption)
+	threePlayers.checked = settings.Settings.PlayerCount == 3
+	fourPlayers := newCheckBox(lang.FourPlayers, size(350, 80), FourPlayersOption)
+	fourPlayers.checked = settings.Settings.PlayerCount == 4
+	var playerMenus [4]*window
 	for i := range playerMenus {
+		playerIndex := i // need to copy this for use in closures
 		nameText := newTextBox(lang.Name, rect{0, 0, 500, 80}, graphics.font)
-		nameText.text = string('1' + i)
+		nameText.text = settings.Settings.PlayerNames[i]
+		nameText.onTextChange(func(text string) {
+			settings.Settings.PlayerNames[playerIndex] = text
+		})
 		playHere := newCheckBox(lang.PlayHere, rect{0, 0, 500, 80}, -1)
+		playHere.onCheckChange(func(checked bool) {
+			if checked {
+				settings.Settings.PlayerTypes[playerIndex] = settings.Human
+			}
+		})
+		playHere.checked = settings.Settings.PlayerTypes[i] == settings.Human
 		playAI := newCheckBox(lang.AIPlayer, rect{0, 0, 500, 80}, -1)
-		playNetwork := newCheckBox(lang.NetworkPlayer, rect{0, 0, 500, 80}, -1)
+		playAI.onCheckChange(func(checked bool) {
+			if checked {
+				settings.Settings.PlayerTypes[playerIndex] = settings.AI
+			}
+		})
+		playAI.checked = settings.Settings.PlayerTypes[i] == settings.AI
 		ipText := newTextBox(lang.IP, rect{0, 0, 500, 80}, graphics.font)
-		ipText.text = "127.0.0.1"
+		ipText.text = settings.Settings.IPs[i]
+		ipText.onTextChange(func(text string) {
+			settings.Settings.IPs[playerIndex] = text
+		})
 		portText := newTextBox(lang.Port, rect{0, 0, 500, 80}, graphics.font)
-		portText.text = "5555"
+		portText.text = settings.Settings.Ports[i]
+		portText.onTextChange(func(text string) {
+			settings.Settings.Ports[playerIndex] = text
+		})
+		connectButton := newButton(lang.Connect, size(500, 80), -1)
+		playNetwork := newCheckBox(lang.NetworkPlayer, rect{0, 0, 500, 80}, -1)
 		playNetwork.onCheckChange(func(checked bool) {
 			ipText.setEnabled(checked)
 			portText.setEnabled(checked)
+			connectButton.setEnabled(checked)
+			if checked {
+				settings.Settings.PlayerTypes[playerIndex] = settings.NetworkPlayer
+			}
 		})
+		playNetwork.setChecked(settings.Settings.PlayerTypes[i] == settings.NetworkPlayer)
 
 		playerMenus[i] = newWindow(
-			size(500, 0), // TODO add pack() function to window ???
+			rect{},
 			newVerticalFlowLayout(0),
-			newSpacer(rect{0, 0, 0, 40}),
+			newSpacer(rect{0, 0, 620, 30}),
 			nameText,
 			newCheckBoxGroup(
 				playHere,
@@ -101,48 +134,24 @@ func NewGameUI(win Window) (*gameUI, error) {
 			),
 			ipText,
 			portText,
-			newSpacer(rect{0, 0, 0, 40}),
+			connectButton,
+			newSpacer(rect{0, 0, 0, 30}),
 		)
 	}
-	startGame := newButton(lang.StartGame, rect{0, 0, 400, 80}, StartGameOption)
-	back := newButton(lang.Back, rect{0, 0, 400, 80}, NewGameBackOption)
-	playerTabs := [4]*tab{
-		newTab(
-			"      ",
-			[4]float32{1, 0, 0, 1},
-			playerMenus[0],
-			true,
-		),
-		newTab(
-			"      ",
-			[4]float32{0, 0, 1, 1},
-			playerMenus[1],
-			true,
-		),
-		newTab(
-			"      ",
-			[4]float32{1, 1, 1, 1},
-			playerMenus[2],
-			true,
-		),
-		newTab(
-			"      ",
-			[4]float32{1, 0.5, 0, 1},
-			playerMenus[3],
-			false,
-		),
+	var playerTabs [4]*tab
+	for i := range playerTabs {
+		col := game.Color(i)
+		playerTabs[i] = newTab(fullPlayerColor(col), playerMenus[i], i < settings.Settings.PlayerCount)
 	}
-	playersSheet := newTabSheet(graphics.font, playerTabs[:]...)
+	playersSheet := newTabSheet(60, playerTabs[:]...)
+
 	newGameMenu := newWindow(
 		rect{0, 0, gameW, gameH},
-		newVerticalFlowLayout(0),
+		newVerticalFlowLayout(20),
 		newCheckBoxGroup(threePlayers, fourPlayers),
-		newSpacer(size(0, 50)),
 		playersSheet,
-		newSpacer(size(0, 50)),
-		startGame,
-		newSpacer(size(0, 20)),
-		back,
+		newButton(lang.StartGame, rect{0, 0, 400, 80}, StartGameOption),
+		newButton(lang.Back, rect{0, 0, 400, 80}, NewGameBackOption),
 	)
 	newGameMenu.setVisible(false)
 
@@ -151,18 +160,18 @@ func NewGameUI(win Window) (*gameUI, error) {
 		window:         win,
 		camera:         newCamera(),
 		graphics:       graphics,
-		buyMenu:        newBuyMenu(graphics, g),
 		mainMenu:       mainMenu,
 		newGameMenu:    newGameMenu,
 		languageMenu:   languageMenu,
 		playerTabSheet: playersSheet,
 		lastPlayerTab:  playerTabs[3],
 	}
+	ui.buyMenu = newBuyMenu(graphics, ui)
 	ui.gui = newComposite(ui.mainMenu, ui.newGameMenu, ui.languageMenu)
 	if err := ui.init(); err != nil {
 		return nil, err
 	}
-	ui.setLanguage(lang.English)
+	ui.setLanguage(lang.Language(settings.Settings.Language))
 	//ui.DEBUG_initGame()
 	return ui, nil
 }
@@ -174,7 +183,7 @@ type gameUI struct {
 	graphics       *graphics
 	mouseX, mouseY float64
 	buyMenu        *buyMenu
-	gui            guiElement
+	gui            *composite
 	mainMenu       *window
 	languageMenu   *window
 	newGameMenu    *window
@@ -187,6 +196,8 @@ type Window interface {
 	Close()
 	SetTitle(title string)
 }
+
+func (ui *gameUI) Game() *game.Game { return ui.game }
 
 func (ui *gameUI) setLanguage(id lang.Language) {
 	lang.CurrentLanguage = id
@@ -218,7 +229,7 @@ func (ui *gameUI) KeyDown(key glfw.Key) {
 
 func (ui *gameUI) MouseButtonDown(button glfw.MouseButton) {
 	if button != glfw.MouseButtonLeft {
-		return
+		return // TODO handle right click when building to undo both buying and build
 	}
 
 	gameX, gameY := ui.camera.windowToGame(ui.mouseX, ui.mouseY)
@@ -242,19 +253,22 @@ func (ui *gameUI) MouseButtonDown(button glfw.MouseButton) {
 				ui.mainMenu.visible = true
 			case StartGameOption:
 				ui.game = game.New([]game.Color{game.Red, game.Blue, game.White}, rand.Int())
+				ui.game = game.New([]game.Color{game.Red, game.Blue, game.White}, 0) // TODO remove
 				ui.init()
+				ui.game.Start()
 			case ThreePlayersOption:
 				ui.lastPlayerTab.visible = false
 				ui.playerTabSheet.relayout()
+				settings.Settings.PlayerCount = 3
 			case FourPlayersOption:
 				ui.lastPlayerTab.visible = true
 				ui.playerTabSheet.relayout()
+				settings.Settings.PlayerCount = 4
 			}
 			if action >= LanguageOptionOffset {
 				language := lang.Language(action - LanguageOptionOffset)
 				ui.setLanguage(language)
 			}
-			return // ignore other event handling if any button was pressed
 		}
 	} else if ui.game.State == game.ChoosingNextAction {
 		ui.buyMenu.click(gameX, gameY)
@@ -370,25 +384,25 @@ func (ui *gameUI) stateInstruction() string {
 	case game.NotStarted:
 		return lang.Get(lang.Menu)
 	case game.BuildingFirstSettlement:
-		return "Build your first Settlement"
+		return lang.Get(lang.BuildFirstSettlement)
 	case game.BuildingFirstRoad:
-		return "Build your first Road"
+		return lang.Get(lang.BuildFirstRoad)
 	case game.BuildingSecondSettlement:
-		return "Build your second Settlement"
+		return lang.Get(lang.BuildSecondSettlement)
 	case game.BuildingSecondRoad:
-		return "Build your second Road"
+		return lang.Get(lang.BuildSecondRoad)
 	case game.BuildingNewRoad:
-		return "Build your Road"
+		return lang.Get(lang.BuildRoad)
 	case game.BuildingNewSettlement:
-		return "Build your Settlement"
+		return lang.Get(lang.BuildSettlement)
 	case game.BuildingNewCity:
-		return "Build your City"
+		return lang.Get(lang.BuildCity)
 	case game.ChoosingNextAction:
-		return "Choose your next Action"
+		return lang.Get(lang.ChooseNextAction)
 	case game.RollingDice:
-		return "Let's roll the Dice"
+		return lang.Get(lang.RollDice)
 	}
-	return "Unknown State"
+	return "Unknown State: " + strconv.Itoa(int(ui.game.State))
 }
 
 func (ui *gameUI) drawBaseGame() {
@@ -415,6 +429,12 @@ func (ui *gameUI) drawBaseGame() {
 	}
 
 	ui.graphics.drawRobber(tileToScreen(ui.game.Robber.Position))
+}
+
+func (ui *gameUI) Finish() {
+	if err := settings.Settings.Save(); err != nil {
+		fmt.Println("cannot save settings:", err)
+	}
 }
 
 func (ui *gameUI) DEBUG_initGame() {

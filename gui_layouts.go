@@ -81,7 +81,7 @@ func (l *verticalFlowLayout) relayout(in rect) {
 	y := in.y + (in.h-height)/2
 	for _, item := range l.items {
 		b := item.bounds()
-		item.setBounds(rect{b.x + (in.w-b.w)/2, y, b.w, b.h})
+		item.setBounds(rect{in.x + (in.w-b.w)/2, y, b.w, b.h})
 		y += b.h + l.yMargin
 	}
 }

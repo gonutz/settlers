@@ -15,16 +15,6 @@ var (
 	checkBoxUncheckedColor = [4]float32{1, 0.5, 0.5, 1}
 )
 
-//var (
-//	menuColdBackColor      = [4]float32{0.8, 0, 0, 1}
-//	menuHotBackColor       = [4]float32{0.6, 0, 0, 1}
-//	menuFontColor          = [4]float32{1, 1, 1, 1}
-//	menuDisabledFontColor  = [4]float32{0.6, 0.6, 0.6, 1}
-//	menuColdFontColor      = [4]float32{0.7, 0.7, 0.7, 1}
-//	checkBoxCheckedColor   = [4]float32{0.5, 1, 0.5, 1}
-//	checkBoxUncheckedColor = [4]float32{1, 0.5, 0.5, 1}
-//)
-
 type guiElement interface {
 	bounds() rect
 	setBounds(rect)
@@ -36,6 +26,7 @@ type guiElement interface {
 	keyPressed(glfw.Key)
 }
 
+// boundingBox returns the smallest rect that encompasses all bounds.
 func boundingBox(bucket bounderBucket) rect {
 	if bucket.Len() == 0 {
 		return rect{}
@@ -73,22 +64,31 @@ type bounder interface {
 // windows are visible by default
 
 func newWindow(bounds rect, layout layout, elems ...guiElement) *window {
-	w := &window{newComposite(elems...), layout, true}
+	w := &window{newComposite(elems...), bounds, layout, true}
 	for _, e := range elems {
 		layout.addElement(e)
 	}
 	layout.relayout(bounds)
+	w.pack()
 	return w
 }
 
 type window struct {
 	*composite
-	layout  layout
-	visible bool
+	boundingRect rect
+	layout       layout
+	visible      bool
 }
 
+func (w *window) pack() {
+	w.boundingRect = boundingBox(guiElementsToBounderBucket(w.elems))
+	w.layout.relayout(w.boundingRect)
+}
+
+func (w *window) bounds() rect { return w.boundingRect }
+
 func (w *window) setBounds(bounds rect) {
-	w.composite.setBounds(bounds)
+	w.boundingRect = bounds
 	w.layout.relayout(bounds)
 }
 
@@ -143,14 +143,6 @@ func (c *composite) bounds() rect {
 	return boundingBox(guiElementsToBounderBucket(c.elems))
 }
 
-func (c *composite) setBounds(bounds rect) {
-	b := c.bounds()
-	dx, dy := bounds.x-b.x, bounds.y-b.y
-	for _, e := range c.elems {
-		e.setBounds(e.bounds().moveBy(dx, dy))
-	}
-}
-
 func (c *composite) draw(g *graphics) {
 	for _, e := range c.elems {
 		e.draw(g)
@@ -193,17 +185,19 @@ func (slice guiElementsToBounderBucket) At(i int) bounder { return slice[i] }
 
 func newButton(textID lang.Item, bounds rect, actionID int) *button {
 	return &button{
-		rect:   bounds,
-		textID: textID,
-		action: actionID,
+		rect:    bounds,
+		textID:  textID,
+		action:  actionID,
+		enabled: true,
 	}
 }
 
 type button struct {
 	rect
-	textID lang.Item
-	hot    bool
-	action int
+	textID  lang.Item
+	hot     bool
+	action  int
+	enabled bool
 }
 
 func (b *button) bounds() rect          { return b.rect }
@@ -215,15 +209,19 @@ func (b *button) draw(g *graphics) {
 		color = menuHotBackColor
 	}
 	g.rect(b.x, b.y, b.w, b.h, color)
-	g.writeTextLineCenteredInRect(lang.Get(b.textID), b.rect, menuFontColor)
+	fontColor := menuFontColor
+	if !b.enabled {
+		fontColor = menuColdFontColor
+	}
+	g.writeTextLineCenteredInRect(lang.Get(b.textID), b.rect, fontColor)
 }
 
 func (b *button) mouseMovedTo(x, y int) {
-	b.hot = b.contains(x, y)
+	b.hot = b.enabled && b.contains(x, y)
 }
 
 func (b *button) click(x, y int) int {
-	if b.contains(x, y) {
+	if b.enabled && b.contains(x, y) {
 		return b.action
 	}
 	return -1
@@ -231,6 +229,13 @@ func (b *button) click(x, y int) int {
 
 func (*button) runeTyped(rune)      {}
 func (*button) keyPressed(glfw.Key) {}
+
+func (b *button) setEnabled(enabled bool) {
+	b.enabled = enabled
+	if !enabled {
+		b.hot = false
+	}
+}
 
 // text box
 
@@ -252,6 +257,11 @@ type textBox struct {
 	captionRect       rect
 	textRect          rect
 	disabled          bool
+	textChangeAction  func(string)
+}
+
+func (t *textBox) onTextChange(action func(string)) {
+	t.textChangeAction = action
 }
 
 func (t *textBox) bounds() rect          { return t.rect }
@@ -297,7 +307,7 @@ func (t *textBox) runeTyped(r rune) {
 		newText := t.text + string(r)
 		w, _ := t.font.TextSize(newText)
 		if w < t.textRect.w {
-			t.text += string(r)
+			t.setText(newText)
 			t.textLengthInRunes++
 		}
 	}
@@ -313,7 +323,7 @@ func (t *textBox) keyPressed(key glfw.Key) {
 			for i := range t.text {
 				last = i
 			}
-			t.text = t.text[:last]
+			t.setText(t.text[:last])
 			t.textLengthInRunes--
 		}
 		if key == glfw.KeyEnter || key == glfw.KeyKPEnter {
@@ -326,6 +336,13 @@ func (t *textBox) setEnabled(enabled bool) {
 	t.disabled = !enabled
 	if t.disabled {
 		t.hot = false
+	}
+}
+
+func (t *textBox) setText(text string) {
+	t.text = text
+	if t.textChangeAction != nil {
+		t.textChangeAction(text)
 	}
 }
 
@@ -414,12 +431,8 @@ func (c *checkBox) onCheckChange(action func(bool)) {
 // check box group
 
 func newCheckBoxGroup(boxes ...*checkBox) *checkBoxGroup {
-	for _, box := range boxes {
-		box.setChecked(false)
-	}
-	if len(boxes) > 0 {
-		boxes[0].setChecked(true)
-	}
+	checked := checkExactlyOneBox(boxes)
+
 	layout := newTopLeftLayout()
 	elems := make([]guiElement, len(boxes))
 	for i, b := range boxes {
@@ -427,16 +440,51 @@ func newCheckBoxGroup(boxes ...*checkBox) *checkBoxGroup {
 		layout.addElement(b)
 	}
 	layout.relayout(rect{})
-	return &checkBoxGroup{
-		composite: newComposite(elems...),
-		boxes:     boxes,
-	}
+	return &checkBoxGroup{newComposite(elems...), boxes, checked}
 }
 
 type checkBoxGroup struct {
 	*composite
 	boxes        []*checkBox
 	checkedIndex int
+}
+
+func checkExactlyOneBox(boxes []*checkBox) int {
+	if checked := checkedBox(boxes); checked != -1 {
+		return checked
+	}
+
+	for _, box := range boxes {
+		box.setChecked(false)
+	}
+	if len(boxes) > 0 {
+		boxes[0].setChecked(true)
+	}
+	return 0
+}
+
+func checkedBox(boxes []*checkBox) int {
+	checked := -1
+	checkedCount := 0
+	for i, box := range boxes {
+		if box.checked {
+			checked = i
+			checkedCount++
+		}
+	}
+	if checkedCount == 1 {
+		return checked
+	}
+	return -1
+}
+
+func (group *checkBoxGroup) setBounds(bounds rect) {
+	// TODO
+	b := group.bounds()
+	dx, dy := bounds.x-b.x, bounds.y-b.y
+	for _, box := range group.boxes {
+		box.setBounds(box.bounds().moveBy(dx, dy))
+	}
 }
 
 func (group *checkBoxGroup) click(x, y int) (actionID int) {
@@ -462,8 +510,8 @@ func (group *checkBoxGroup) click(x, y int) (actionID int) {
 
 // tab sheet
 
-func newTabSheet(font textSizer, tabs ...*tab) *tabSheet {
-	sheet := &tabSheet{tabs: tabs, font: font}
+func newTabSheet(captionH int, tabs ...*tab) *tabSheet {
+	sheet := &tabSheet{tabs: tabs, captionH: captionH}
 	sheet.relayout()
 	return sheet
 }
@@ -488,31 +536,28 @@ func (s *tabSheet) relayout() {
 	captionW := bounds.w / len(s.visibleTabs)
 
 	x := bounds.x
-	captionH := 0
-	for i, tab := range s.visibleTabs {
-		_, h := s.font.TextSize(tab.title)
-		h += 25
-		captionBounds[i] = rect{x, bounds.y - h, captionW, h}
+	for i, _ := range s.visibleTabs {
+		captionBounds[i] = rect{x, bounds.y - s.captionH, captionW, s.captionH}
 		x += captionW
-		if h > captionH {
-			captionH = h
-		}
 	}
+	// In case the division into len(tabs) parts had a remainder, the last tab's
+	// caption might not align with the border's right edge. So just make it
+	// fit.
+	last := &captionBounds[len(captionBounds)-1]
+	last.w = bounds.x + bounds.w - last.x
 
 	const margin = 0
 	s.rect = rect{
 		bounds.x - margin,
-		bounds.y - captionH - margin,
+		bounds.y - s.captionH - margin,
 		bounds.w + 2*margin,
-		bounds.h + captionH + 2*margin,
+		bounds.h + s.captionH + 2*margin,
 	}
 	s.captionBounds = captionBounds
-	s.captionH = captionH
 }
 
 type tabSheet struct {
 	rect
-	font          textSizer
 	tabs          []*tab
 	visibleTabs   []*tab
 	activeIndex   int
@@ -542,11 +587,6 @@ func (s *tabSheet) draw(g *graphics) {
 			color = activeColor
 		}
 		g.rect(b.x, b.y, b.w, b.h, color)
-		fontColor := menuColdFontColor
-		if i == s.activeIndex {
-			fontColor = menuFontColor
-		}
-		g.writeTextLineCenteredInRect(tab.title, b, fontColor)
 	}
 	s.visibleTabs[s.activeIndex].content.draw(g)
 }
@@ -575,12 +615,11 @@ func (s *tabSheet) keyPressed(key glfw.Key) {
 
 // tab
 
-func newTab(title string, color [4]float32, content guiElement, visible bool) *tab {
-	return &tab{title, content, color, visible}
+func newTab(color [4]float32, content guiElement, visible bool) *tab {
+	return &tab{content, color, visible}
 }
 
 type tab struct {
-	title   string
 	content guiElement
 	color   [4]float32
 	visible bool
