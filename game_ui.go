@@ -201,6 +201,7 @@ func (ui *gameUI) Game() *game.Game { return ui.game }
 
 func (ui *gameUI) setLanguage(id lang.Language) {
 	lang.CurrentLanguage = id
+	settings.Settings.Language = int(id)
 	ui.window.SetTitle(lang.Get(lang.Title))
 }
 
